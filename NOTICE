@@ -1,0 +1,22 @@
+TablePulse
+Copyright 2026 TablePulse Contributors
+
+This product includes software developed by the TablePulse open-source project
+(https://github.com/nisargpatel1906/TablePuls).
+
+Third-Party Attributions & Notices:
+- FastAPI, Pydantic, SQLAlchemy, Alembic (MIT)
+- PostgreSQL 16 (PostgreSQL License)
+- Valkey 8 (BSD-3-Clause)
+- MediaMTX (MIT) — https://github.com/bluenviron/mediamtx
+- Next.js, React, Konva, Recharts, Tailwind CSS, Lucide Icons (MIT / ISC)
+- RF-DETR Nano / Small / Medium / Large (Apache-2.0 ONLY) — Roboflow
+  (Note: RF-DETR Atto/Femto/Pico/XL/2XL are excluded due to Roboflow Platform Model License 1.0)
+- ByteTrack / Supervision (MIT)
+- OpenCV (Apache-2.0)
+- ONNX Runtime (MIT)
+- LightGBM (MIT)
+- Caddy (Apache-2.0)
+
+Documentation is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)
+unless otherwise noted.

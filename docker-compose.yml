@@ -1,0 +1,178 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tablepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tablepulse}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tablepulse} -d ${POSTGRES_DB:-tablepulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--requirepass", "${VALKEY_PASSWORD:-change_me_valkey_password}", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a ${VALKEY_PASSWORD:-change_me_valkey_password} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.4
+    restart: unless-stopped
+    volumes:
+      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8889:8889"
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      TABLEPULSE_ENV: ${TABLEPULSE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://tablepulse:change_me_postgres_password@db:5432/tablepulse}
+      VALKEY_URL: ${VALKEY_URL:-redis://:change_me_valkey_password@valkey:6379/0}
+      TABLEPULSE_SECRET_KEY: ${TABLEPULSE_SECRET_KEY:-dev_only_replace_with_64_hex_chars_for_jwt_signing_key_00000000}
+      TABLEPULSE_DATA_KEY: ${TABLEPULSE_DATA_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      MEDIAMTX_HOOK_SECRET: ${MEDIAMTX_HOOK_SECRET:-dev_only_replace_with_mediamtx_internal_secret}
+      MEDIAMTX_INTERNAL_URL: ${MEDIAMTX_INTERNAL_URL:-rtsp://mediamtx:8554}
+      SNAPSHOT_STORAGE_DIR: ${SNAPSHOT_STORAGE_DIR:-/app/data/snapshots}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+    volumes:
+      - snapshots_data:/app/data/snapshots
+      - models_data:/app/data/models
+      - demo_data:/app/data/demo
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  cv-worker:
+    build:
+      context: .
+      dockerfile: cv-worker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://tablepulse:change_me_postgres_password@db:5432/tablepulse}
+      VALKEY_URL: ${VALKEY_URL:-redis://:change_me_valkey_password@valkey:6379/0}
+      TABLEPULSE_DATA_KEY: ${TABLEPULSE_DATA_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      MEDIAMTX_INTERNAL_URL: ${MEDIAMTX_INTERNAL_URL:-rtsp://mediamtx:8554}
+      ML_DEVICE: ${ML_DEVICE:-cpu}
+      ML_MODEL_DIR: ${ML_MODEL_DIR:-/app/data/models}
+      SNAPSHOT_STORAGE_DIR: ${SNAPSHOT_STORAGE_DIR:-/app/data/snapshots}
+      DEMO_VIDEO_PATH: ${DEMO_VIDEO_PATH:-/app/data/demo/demo_floor.mp4}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      AI_INFERENCE_ENABLED: ${AI_INFERENCE_ENABLED:-true}
+      REVIEW_CROPS_ENABLED: ${REVIEW_CROPS_ENABLED:-true}
+    volumes:
+      - snapshots_data:/app/data/snapshots
+      - models_data:/app/data/models
+      - demo_data:/app/data/demo
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
+    networks:
+      - internal
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL: ${NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL:-http://localhost:8889}
+      NEXT_PUBLIC_DEMO_MODE: ${NEXT_PUBLIC_DEMO_MODE:-true}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web
+      - api
+      - mediamtx
+    networks:
+      - internal
+
+  demo-seed:
+    build:
+      context: .
+      dockerfile: cv-worker/Dockerfile
+    profiles: ["demo"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://tablepulse:change_me_postgres_password@db:5432/tablepulse}
+      VALKEY_URL: ${VALKEY_URL:-redis://:change_me_valkey_password@valkey:6379/0}
+      DEMO_MODE: "true"
+      DEMO_VIDEO_PATH: /app/data/demo/demo_floor.mp4
+    volumes:
+      - demo_data:/app/data/demo
+    command: ["uv", "run", "python", "-m", "app.demo_seed"]
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+
+volumes:
+  pg_data:
+  snapshots_data:
+  models_data:
+  demo_data:
+
+networks:
+  internal:
+    driver: bridge

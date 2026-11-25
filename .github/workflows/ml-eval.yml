@@ -1,0 +1,26 @@
+name: ML Evaluation Gate
+
+on:
+  pull_request:
+    paths:
+      - 'ml/**'
+      - 'cv-worker/**'
+      - 'docs/ml/**'
+
+permissions:
+  contents: read
+
+jobs:
+  ml-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Run ML test suite & gate fixture verification
+        working-directory: ml
+        run: |
+          uv sync --frozen --all-extras
+          uv run pytest -v
+          uv run python evaluate_gate.py --fixture-check

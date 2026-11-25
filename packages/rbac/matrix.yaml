@@ -1,0 +1,96 @@
+# TablePulse Single Source of Truth RBAC Matrix
+# Canonical roles and capabilities per docs/04-rbac-and-access-control.md
+
+version: 1
+
+roles:
+  OWNER:
+    scope: organization
+    description: Restaurant Owner / Org Admin (all org venues)
+    default_route: /venues/{venueId}/floor
+  MANAGER:
+    scope: venue
+    description: Floor / Shift Manager (assigned venues)
+    default_route: /venues/{venueId}/floor
+  HOST:
+    scope: venue
+    description: Front-of-House Host (assigned venues)
+    default_route: /venues/{venueId}/floor
+  STAFF:
+    scope: venue
+    description: Server / Busser (assigned venues)
+    default_route: /venues/{venueId}/alerts
+  VIEWER:
+    scope: venue
+    description: Operations Analyst / Read-only Viewer (assigned venues)
+    default_route: /venues/{venueId}/analytics
+
+capabilities:
+  floor.view:
+    roles: [OWNER, MANAGER, HOST, STAFF, VIEWER]
+    screens: [SCR-005, SCR-007]
+  cameras.live.view:
+    roles: [OWNER, MANAGER]
+    conditional_roles:
+      HOST: venue.allow_host_camera_view == true
+    screens: [SCR-006]
+  tables.mark_clean_or_served:
+    roles: [OWNER, MANAGER, HOST, STAFF]
+    screens: [SCR-007, SCR-008]
+  tables.override_full:
+    roles: [OWNER, MANAGER, HOST]
+    screens: [SCR-007]
+  tables.flag_ai:
+    roles: [OWNER, MANAGER, HOST, STAFF]
+    screens: [SCR-007]
+  alerts.view:
+    roles: [OWNER, MANAGER, HOST, STAFF]
+    screens: [SCR-008]
+  alerts.resolve:
+    roles: [OWNER, MANAGER, HOST, STAFF]
+    screens: [SCR-008]
+  waitlist.manage:
+    roles: [OWNER, MANAGER, HOST]
+    screens: [SCR-009]
+  turnover.view:
+    roles: [OWNER, MANAGER, HOST]
+    screens: [SCR-005, SCR-009]
+  analytics.view_export:
+    roles: [OWNER, MANAGER, VIEWER]
+    screens: [SCR-010]
+  ml_review.label:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-011]
+  ml_review.export:
+    roles: [OWNER]
+    screens: [SCR-011]
+  venues.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-004, SCR-012]
+  cameras.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-012]
+  polygons.calibrate:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-013]
+  alert_rules.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-014]
+  users.manage_standard:
+    roles: [OWNER, MANAGER]
+    allowed_target_roles: [HOST, STAFF, VIEWER]
+    screens: [SCR-015]
+  users.manage_privileged:
+    roles: [OWNER]
+    allowed_target_roles: [OWNER, MANAGER, HOST, STAFF, VIEWER]
+    screens: [SCR-015]
+  audit_logs.view:
+    roles: [OWNER, MANAGER]
+    scope_notes: MANAGER sees assigned venues only; OWNER sees entire org
+    screens: [SCR-015]
+  system.manage:
+    roles: [OWNER]
+    screens: [SCR-016]
+  privacy.purge:
+    roles: [OWNER]
+    screens: [SCR-016]

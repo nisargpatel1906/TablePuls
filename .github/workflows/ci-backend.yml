@@ -1,0 +1,64 @@
+name: CI Backend & CV Worker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tablepulse
+          POSTGRES_PASSWORD: tablepulse_test_password
+          POSTGRES_DB: tablepulse_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen --all-extras
+      - name: Ruff & Mypy strict
+        working-directory: backend
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy --strict app
+      - name: Alembic upgrade & Backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://tablepulse:tablepulse_test_password@localhost:5432/tablepulse_test
+          VALKEY_URL: redis://localhost:6379/0
+          TABLEPULSE_SECRET_KEY: ci_test_secret_key_0000000000000000000000000000000000000000
+          TABLEPULSE_DATA_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+          MEDIAMTX_HOOK_SECRET: ci_mediamtx_hook_secret
+        run: |
+          uv run alembic upgrade head
+          uv run pytest -v
+      - name: CV Worker & ML tests
+        run: |
+          cd cv-worker && uv sync --frozen --all-extras && uv run ruff check . && uv run mypy --strict app && uv run pytest -v
+          cd ../ml && uv sync --frozen --all-extras && uv run ruff check . && uv run pytest -v

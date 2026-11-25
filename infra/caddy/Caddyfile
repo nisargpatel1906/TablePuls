@@ -1,0 +1,26 @@
+{
+	auto_https off
+}
+
+:80 {
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle /webrtc/* {
+		uri strip_prefix /webrtc
+		reverse_proxy mediamtx:8889
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

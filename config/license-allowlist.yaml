@@ -1,0 +1,77 @@
+# TablePulse License Allowlist & Banlist (Single Source of Truth)
+# Verified against docs/05-architecture-and-tech-stack.md and AGENTS.md
+
+allowed_spdx_substrings:
+  - "Apache-2.0"
+  - "Apache 2.0"
+  - "Apache Software License"
+  - "MIT"
+  - "BSD-2-Clause"
+  - "BSD-3-Clause"
+  - "BSD License"
+  - "ISC"
+  - "PSF"
+  - "Python Software Foundation"
+  - "PostgreSQL"
+  - "MPL-2.0"
+  - "Mozilla Public License 2.0"
+  - "CC0"
+  - "Unlicense"
+  - "0BSD"
+  - "HPND" # PIL / Pillow historical license
+  - "Zlib"
+  - "LGPL-2.1" # dynamically linked system libs only
+  - "LGPL-3.0" # dynamically linked system libs only
+
+banned_license_substrings:
+  - "AGPL"
+  - "GPL-2"
+  - "GPL-3"
+  - "GPLv2"
+  - "GPLv3"
+  - "GNU General Public License"
+  - "GNU Affero"
+  - "SSPL"
+  - "BUSL"
+  - "BSL-1.1"
+  - "TSL"
+  - "Timescale"
+  - "Non-Commercial"
+  - "NonCommercial"
+  - "Research-Only"
+  - "Roboflow Platform Model License"
+  - "RF-PML"
+
+banned_packages:
+  - "ultralytics"
+  - "ultralytics-thop"
+  - "boxmot"
+  - "minio"
+  - "face_recognition"
+  - "face-recognition"
+  - "insightface"
+  - "deepface"
+  - "arcface"
+
+# Restricted RF-DETR model sizes (Roboflow Platform Model License 1.0)
+banned_rfdetr_variants:
+  - "rfdetr-atto"
+  - "rfdetr-femto"
+  - "rfdetr-pico"
+  - "rfdetr-xl"
+  - "rfdetr-2xl"
+  - "RFDETRAtto"
+  - "RFDETRFemto"
+  - "RFDETRPico"
+  - "RFDETRXLarge"
+  - "RFDETR2XLarge"
+
+allowed_rfdetr_variants:
+  - "rfdetr-nano"
+  - "rfdetr-small"
+  - "rfdetr-medium"
+  - "rfdetr-large"
+  - "RFDETRNano"
+  - "RFDETRSmall"
+  - "RFDETRMedium"
+  - "RFDETRLarge"

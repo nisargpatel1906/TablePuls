@@ -1,0 +1,31 @@
+# MediaMTX configuration for TablePulse
+# Strips audio, prevents disk recording, enforces external auth hook on playback
+
+logLevel: info
+logDestinations: [stdout]
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: '*'
+
+hls: no
+rtmp: no
+srt: no
+
+# External auth hook validated by FastAPI (/api/v1/internal/media-auth)
+authMethod: http
+authHTTPAddress: http://api:8000/api/v1/internal/media-auth
+authHTTPExclude:
+  - action: publish
+  - action: read
+    path: ~^internal/.*
+
+paths:
+  all_others:
+    record: no
+    # Strip audio tracks at ingest when relaying
+    rtspTransport: tcp

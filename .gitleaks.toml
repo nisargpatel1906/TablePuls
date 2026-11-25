@@ -1,0 +1,20 @@
+title = "TablePulse Secret Scanning Policy"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documentation and env example placeholder templates"
+paths = [
+  '''\.env\.example$''',
+  '''deploy/env\.example$''',
+  '''docs/.*\.md$''',
+  '''\.github/workflows/.*\.yml$''',
+]
+regexes = [
+  '''change_me_.*''',
+  '''REPLACE_WITH_.*''',
+  '''dev_only_replace_with_.*''',
+  '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=''',
+  '''ci_test_secret_key_.*''',
+]

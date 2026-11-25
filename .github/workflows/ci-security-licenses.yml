@@ -1,0 +1,31 @@
+name: CI Security & License Gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-and-licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Python setup
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: License & Privacy Prohibition Check
+        run: |
+          python scripts/license_check.py
+      - name: Check prohibited biometric libraries
+        run: |
+          ! grep -rnE "face_recognition|insightface|deepface|arcface|ultralytics|boxmot" backend cv-worker ml frontend --exclude-dir=tests --exclude-dir=node_modules --exclude-dir=.venv

@@ -1,0 +1,43 @@
+{
+  "name": "tablepulse-web",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "15.5.29",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@tanstack/react-query": "5.108.4",
+    "konva": "10.11.0",
+    "react-konva": "19.3.2",
+    "recharts": "3.11.1",
+    "lucide-react": "1.80.0",
+    "js-yaml": "4.1.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.1",
+    "@playwright/test": "1.65.1",
+    "@testing-library/react": "16.3.3",
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "22.15.0",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "@vitejs/plugin-react": "4.4.1",
+    "eslint": "10.15.0",
+    "eslint-config-next": "15.5.29",
+    "jsdom": "26.1.0",
+    "tailwindcss": "4.3.5",
+    "@tailwindcss/postcss": "4.3.5",
+    "typescript": "5.8.3",
+    "vitest": "5.1.1"
+  }
+}

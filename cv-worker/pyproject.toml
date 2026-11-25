@@ -1,0 +1,41 @@
+[project]
+name = "tablepulse-cv-worker"
+version = "1.0.0"
+description = "TablePulse CV Inference Worker (RF-DETR Apache-2.0 ONNX, ByteTrack, Face Blur, State Engine)"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "onnxruntime==1.32.0",
+    "opencv-python-headless==5.1.0.95",
+    "supervision==0.32.1",
+    "numpy==2.5.5",
+    "pillow==13.0.0",
+    "valkey==6.2.0",
+    "pydantic==2.14.4",
+    "pydantic-settings==2.16.3",
+    "cryptography==50.0.2",
+    "prometheus-client==0.26.0",
+    "structlog==26.1.0",
+    "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+    "ruff==0.17.6",
+    "mypy==2.4.1",
+    "pip-licenses==5.5.5",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
