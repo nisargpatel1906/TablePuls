@@ -299,7 +299,12 @@ async def demo_login(
     user = (await db.execute(select(User).where(User.email == demo_email))).scalar_one_or_none()
     if user is None:
         org = (
-            await db.execute(select(Organization).where(Organization.deleted_at.is_(None)).limit(1))
+            await db.execute(
+                select(Organization).where(
+                    Organization.name == "TablePulse Demo Hospitality",
+                    Organization.deleted_at.is_(None),
+                )
+            )
         ).scalar_one_or_none()
         if org is None:
             org = Organization(id=uuid7(), name="TablePulse Demo Hospitality")
@@ -308,7 +313,7 @@ async def demo_login(
             db.add(
                 SystemSetting(
                     organization_id=org.id,
-                    ai_inference_enabled=settings.ai_inference_enabled,
+                    ai_inference_enabled=True,
                     face_blur_enforced=True,
                     snapshot_retention_days=7,
                     analytics_retention_days=365,

@@ -85,7 +85,15 @@ export default function PolygonCalibrationPage() {
         exclusion_polygons_json: PolygonPoint[][];
         tables: CalibrationTable[];
       }>(`/api/v1/venues/${venueId}/cameras/${cameraId}/polygons`);
-      setTables(polyRes.tables);
+      setTables(
+        polyRes.tables.map((tbl) => ({
+          ...tbl,
+          polygon_json: (tbl.polygon_json || []).map((pt) => ({
+            x: Math.round(pt.x * 1000) / 1000,
+            y: Math.round(pt.y * 1000) / 1000,
+          })),
+        })),
+      );
       setExclusionZones(polyRes.exclusion_polygons_json || []);
 
       try {

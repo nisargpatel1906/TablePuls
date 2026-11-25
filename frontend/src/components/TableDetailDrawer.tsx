@@ -21,6 +21,7 @@ const OVERRIDE_STATES: TableState[] = [
 interface TableDetailDrawerProps {
   venueId: string;
   tableId: string;
+  standalone?: boolean;
   onClose?: () => void;
   onUpdated?: () => void;
 }
@@ -28,6 +29,7 @@ interface TableDetailDrawerProps {
 export function TableDetailDrawer({
   venueId,
   tableId,
+  standalone = false,
   onClose,
   onUpdated,
 }: TableDetailDrawerProps) {
@@ -158,13 +160,15 @@ export function TableDetailDrawer({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/venues/${venueId}/tables/${tableId}`}
-            className="rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-1.5 text-xs hover:opacity-80"
-            aria-label="Open full table detail page"
-          >
-            <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          </Link>
+          {!standalone && (
+            <Link
+              href={`/venues/${venueId}/tables/${tableId}`}
+              className="rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-1.5 text-xs hover:opacity-80"
+              aria-label="Open full table detail page"
+            >
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => void loadDetail()}

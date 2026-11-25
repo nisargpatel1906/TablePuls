@@ -44,7 +44,6 @@ export default function UsersAndAuditPage() {
 
   const [showInvite, setShowInvite] = useState(false);
   const [invEmail, setInvEmail] = useState("");
-  const [invName, setInvName] = useState("");
   const [invRole, setInvRole] = useState<Role>("HOST");
   const [invVenueId, setInvVenueId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -97,16 +96,14 @@ export default function UsersAndAuditPage() {
           method: "POST",
           body: JSON.stringify({
             email: invEmail.trim(),
-            full_name: invName.trim(),
             role: invRole,
-            assigned_venue_ids: invVenueId ? [invVenueId] : [],
+            venue_ids: invVenueId ? [invVenueId] : [],
           }),
         },
       );
       setSuccessMsg(`Created 48h invite link for ${res.email}.`);
       setGeneratedUrl(res.invite_url);
       setInvEmail("");
-      setInvName("");
       setShowInvite(false);
       await loadData();
     } catch (err) {
@@ -240,14 +237,18 @@ export default function UsersAndAuditPage() {
             className="tp-glass grid grid-cols-1 gap-3 rounded-xl border p-4 md:grid-cols-4"
           >
             <label className="flex flex-col gap-1 text-xs font-medium">
-              Full Name *
-              <input
-                type="text"
-                required
-                value={invName}
-                onChange={(e) => setInvName(e.target.value)}
+              Venue Scope
+              <select
+                value={invVenueId}
+                onChange={(e) => setInvVenueId(e.target.value)}
                 className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
-              />
+              >
+                {venues.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
               Email *
