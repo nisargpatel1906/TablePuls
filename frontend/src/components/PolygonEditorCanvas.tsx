@@ -56,19 +56,35 @@ export default function PolygonEditorCanvas({
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const obs = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && rect.width > 120) {
-        const w = Math.max(280, Math.floor(rect.width - 16));
-        setSize({ width: w, height: Math.round((w * 9) / 16) });
-      }
-    });
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 120) return;
+      const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+      const maxH = Math.max(220, Math.min(440, vh - 260));
+      const maxWByH = Math.floor((maxH * 16) / 9);
+      const w = Math.max(280, Math.min(Math.floor(rect.width - 16), maxWByH));
+      const h = Math.round((w * 9) / 16);
+      setSize((prev) =>
+        Math.abs(prev.width - w) < 4 && Math.abs(prev.height - h) < 4
+          ? prev
+          : { width: w, height: h },
+      );
+    };
+    updateSize();
+    const obs = new ResizeObserver(updateSize);
     obs.observe(el);
-    return () => obs.disconnect();
+    window.addEventListener("resize", updateSize);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
   }, []);
 
   return (
-    <div ref={containerRef} className="tp-glass w-full overflow-hidden rounded-xl border p-2">
+    <div
+      ref={containerRef}
+      className="tp-glass flex w-full justify-center overflow-hidden rounded-xl border p-2"
+    >
       <Stage
         width={size.width}
         height={size.height}

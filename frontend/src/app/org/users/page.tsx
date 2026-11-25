@@ -339,78 +339,140 @@ export default function UsersAndAuditPage() {
         )}
 
         {canManageUsers && !loading && tab === "members" && (
-          <div className="tp-glass overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[640px] text-left text-xs">
-              <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-solid)] uppercase text-[var(--text-secondary)]">
-                <tr>
-                  <th scope="col" className="px-4 py-3">Name</th>
-                  <th scope="col" className="px-4 py-3">Email</th>
-                  <th scope="col" className="px-4 py-3">Role</th>
-                  <th scope="col" className="px-4 py-3">Status</th>
-                  <th scope="col" className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border-subtle)]">
-                {members.map((m) => (
-                  <tr key={m.id}>
-                    <td className="px-4 py-3 font-semibold">{m.full_name}</td>
-                    <td className="px-4 py-3 font-mono">{m.email}</td>
-                    <td className="px-4 py-3">
-                      {canPrivileged ? (
-                        <select
-                          aria-label={`Role for ${m.full_name}`}
-                          value={m.role}
-                          onChange={(e) => void changeRole(m.id, e.target.value as Role)}
-                          className="rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2 py-1 text-xs font-semibold"
-                        >
-                          <option value="OWNER">OWNER</option>
-                          <option value="MANAGER">MANAGER</option>
-                          <option value="HOST">HOST</option>
-                          <option value="STAFF">STAFF</option>
-                          <option value="VIEWER">VIEWER</option>
-                        </select>
-                      ) : (
-                        <span className="rounded bg-[var(--surface-solid)] px-2 py-1 font-semibold">
-                          {m.role}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                          m.is_active
-                            ? "bg-emerald-500/15 text-emerald-700"
-                            : "bg-slate-500/15 text-slate-600"
-                        }`}
+          <>
+            <div className="space-y-3 md:hidden">
+              {members.map((m) => (
+                <div key={m.id} className="tp-glass rounded-xl border p-3.5 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-sm">{m.full_name}</p>
+                      <p className="truncate font-mono text-[11px] text-[var(--text-secondary)]">{m.email}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                        m.is_active
+                          ? "bg-emerald-500/15 text-emerald-700"
+                          : "bg-slate-500/15 text-slate-600"
+                      }`}
+                    >
+                      {m.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-subtle)] pt-2.5">
+                    {canPrivileged ? (
+                      <select
+                        aria-label={`Mobile role for ${m.full_name}`}
+                        value={m.role}
+                        onChange={(e) => void changeRole(m.id, e.target.value as Role)}
+                        className="rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2 py-1 text-xs font-semibold"
                       >
-                        {m.is_active ? "Active" : "Inactive"}
+                        <option value="OWNER">OWNER</option>
+                        <option value="MANAGER">MANAGER</option>
+                        <option value="HOST">HOST</option>
+                        <option value="STAFF">STAFF</option>
+                        <option value="VIEWER">VIEWER</option>
+                      </select>
+                    ) : (
+                      <span className="rounded bg-[var(--surface-solid)] px-2 py-1 font-semibold">
+                        {m.role}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void revokeSessions(m.id)}
+                        className="rounded px-2.5 py-1 font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Revoke
+                      </button>
+                      {canPrivileged && (
                         <button
                           type="button"
-                          onClick={() => void revokeSessions(m.id)}
-                          className="rounded px-2 py-1 font-semibold text-red-600 hover:bg-red-50"
+                          onClick={() => void generateResetLink(m.id)}
+                          className="rounded border border-[var(--border-subtle)] px-2.5 py-1 font-semibold"
                         >
-                          Revoke
+                          Reset Link
                         </button>
-                        {canPrivileged && (
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="tp-glass hidden overflow-x-auto rounded-xl border md:block">
+              <table className="w-full min-w-[640px] text-left text-xs">
+                <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-solid)] uppercase text-[var(--text-secondary)]">
+                  <tr>
+                    <th scope="col" className="px-4 py-3">Name</th>
+                    <th scope="col" className="px-4 py-3">Email</th>
+                    <th scope="col" className="px-4 py-3">Role</th>
+                    <th scope="col" className="px-4 py-3">Status</th>
+                    <th scope="col" className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)]">
+                  {members.map((m) => (
+                    <tr key={m.id}>
+                      <td className="px-4 py-3 font-semibold">{m.full_name}</td>
+                      <td className="px-4 py-3 font-mono">{m.email}</td>
+                      <td className="px-4 py-3">
+                        {canPrivileged ? (
+                          <select
+                            aria-label={`Role for ${m.full_name}`}
+                            value={m.role}
+                            onChange={(e) => void changeRole(m.id, e.target.value as Role)}
+                            className="rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2 py-1 text-xs font-semibold"
+                          >
+                            <option value="OWNER">OWNER</option>
+                            <option value="MANAGER">MANAGER</option>
+                            <option value="HOST">HOST</option>
+                            <option value="STAFF">STAFF</option>
+                            <option value="VIEWER">VIEWER</option>
+                          </select>
+                        ) : (
+                          <span className="rounded bg-[var(--surface-solid)] px-2 py-1 font-semibold">
+                            {m.role}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                            m.is_active
+                              ? "bg-emerald-500/15 text-emerald-700"
+                              : "bg-slate-500/15 text-slate-600"
+                          }`}
+                        >
+                          {m.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => void generateResetLink(m.id)}
-                            className="rounded border border-[var(--border-subtle)] px-2 py-1 font-semibold"
+                            onClick={() => void revokeSessions(m.id)}
+                            className="rounded px-2 py-1 font-semibold text-red-600 hover:bg-red-50"
                           >
-                            Reset Link
+                            Revoke
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                          {canPrivileged && (
+                            <button
+                              type="button"
+                              onClick={() => void generateResetLink(m.id)}
+                              className="rounded border border-[var(--border-subtle)] px-2 py-1 font-semibold"
+                            >
+                              Reset Link
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {canManageUsers && !loading && tab === "audit" && canViewAudit && (

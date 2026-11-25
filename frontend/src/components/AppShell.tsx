@@ -159,25 +159,25 @@ export function AppShell({
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Desktop Sticky 256px Liquid Glass Sidebar */}
+      {/* Desktop Sticky Liquid Glass Sidebar */}
       <aside
         aria-label="Primary navigation"
-        className="hidden lg:flex lg:w-64 lg:flex-col lg:sticky lg:top-3.5 lg:h-[calc(100vh-28px)] lg:ml-3.5 lg:my-3.5 tp-glass rounded-[28px] p-4 shrink-0"
+        className="hidden lg:flex lg:w-60 lg:flex-col lg:sticky lg:top-3 lg:h-[calc(100vh-24px)] lg:ml-3 lg:my-3 tp-glass rounded-[24px] p-3 shrink-0"
       >
-        <div className="flex items-center gap-3 px-2 pb-4 border-b border-[var(--tp-separator)]">
-          <div className="h-10 w-10 rounded-2xl bg-[var(--tp-label-primary)] text-[var(--tp-surface)] flex items-center justify-center font-bold">
-            <PenTool className="h-5 w-5" aria-hidden="true" />
+        <div className="flex items-center gap-2.5 px-2 pb-2.5 border-b border-[var(--tp-separator)]">
+          <div className="h-9 w-9 rounded-xl bg-[var(--tp-label-primary)] text-[var(--tp-surface)] flex items-center justify-center font-bold">
+            <PenTool className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <div className="text-base font-bold leading-tight">TablePulse</div>
-            <div className="text-xs text-[var(--tp-label-secondary)]">
+            <div className="text-sm font-bold leading-tight">TablePulse</div>
+            <div className="text-[11px] text-[var(--tp-label-secondary)]">
               {user?.role || "Guest"}
             </div>
           </div>
         </div>
 
         {venues.length > 0 && (
-          <div className="mt-3 px-1">
+          <div className="mt-2 px-0.5">
             <label htmlFor="venue-switcher" className="sr-only">
               Select venue
             </label>
@@ -185,7 +185,7 @@ export function AppShell({
               id="venue-switcher"
               value={activeVenueId}
               onChange={(e) => router.push(`/venues/${e.target.value}/floor`)}
-              className="w-full min-h-[44px] rounded-[14px] bg-[var(--tp-inset-field)] px-3 text-sm font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
+              className="w-full min-h-[36px] rounded-[12px] bg-[var(--tp-inset-field)] px-2.5 text-xs font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
             >
               {venues.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -196,7 +196,7 @@ export function AppShell({
           </div>
         )}
 
-        <nav className="mt-4 flex-1 space-y-1 overflow-y-auto">
+        <nav className="mt-2.5 flex-1 space-y-0.5 overflow-y-auto">
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -204,18 +204,18 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between min-h-[44px] px-3 rounded-2xl text-sm font-medium transition ${
+                className={`flex items-center justify-between min-h-[36px] px-2.5 py-1 rounded-xl text-[13px] font-medium transition ${
                   active
                     ? "bg-[var(--tp-accent)] text-white"
                     : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
                 }`}
               >
-                <span className="flex items-center gap-2.5">
-                  <Icon className="h-4 w-4" aria-hidden="true" />
+                <span className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {item.label}
                 </span>
                 {typeof item.badge === "number" && item.badge > 0 && (
-                  <span className="rounded-full bg-[#FF3B30] px-2 py-0.5 text-xs font-bold text-white tabular-nums">
+                  <span className="rounded-full bg-[#FF3B30] px-1.5 py-0.5 text-[11px] font-bold text-white tabular-nums">
                     {item.badge}
                   </span>
                 )}
@@ -224,8 +224,8 @@ export function AppShell({
           })}
 
           {adminNav.length > 0 && (
-            <div className="pt-4 mt-3 border-t border-[var(--tp-separator)] space-y-1">
-              <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--tp-label-secondary)]">
+            <div className="pt-2 mt-1.5 border-t border-[var(--tp-separator)] space-y-0.5">
+              <div className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--tp-label-secondary)]">
                 Admin
               </div>
               {adminNav.map((item) => {
@@ -235,13 +235,13 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2.5 min-h-[44px] px-3 rounded-2xl text-sm font-medium transition ${
+                    className={`flex items-center gap-2 min-h-[36px] px-2.5 py-1 rounded-xl text-[13px] font-medium transition ${
                       active
                         ? "bg-[var(--tp-accent)] text-white"
                         : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
                     }`}
                   >
-                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                     {item.label}
                   </Link>
                 );
@@ -253,7 +253,7 @@ export function AppShell({
         <button
           type="button"
           onClick={handleSignOut}
-          className="mt-3 flex items-center gap-2.5 min-h-[44px] px-3 rounded-2xl text-sm font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
+          className="mt-1.5 flex items-center gap-2 min-h-[36px] px-2.5 rounded-xl text-[13px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
         >
           <LogOut className="h-4 w-4" aria-hidden="true" />
           {t(locale, "action.sign_out")}

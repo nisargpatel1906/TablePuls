@@ -29,39 +29,62 @@ export default function FloorCanvas({
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const obs = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && rect.width > 120) {
-        setSize({
-          width: Math.max(320, Math.floor(rect.width)),
-          height: Math.max(380, Math.min(540, Math.floor(rect.width * 0.56))),
-        });
-      }
-    });
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 120) return;
+      const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+      const w = Math.max(300, Math.floor(rect.width));
+      const h = Math.max(240, Math.min(390, Math.max(260, vh - 390), Math.floor(w * 0.42)));
+      setSize((prev) =>
+        Math.abs(prev.width - w) < 4 && Math.abs(prev.height - h) < 4
+          ? prev
+          : { width: w, height: h },
+      );
+    };
+    updateSize();
+    const obs = new ResizeObserver(updateSize);
     obs.observe(el);
-    return () => obs.disconnect();
+    window.addEventListener("resize", updateSize);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
   }, []);
 
-  const toStageCoords = (tbl: FloorTable, idx: number) => {
+  const placed: Array<{ x: number; y: number }> = [];
+  const coords = tables.map((tbl, idx) => {
     const rawX = tbl.floor_x;
     const rawY = tbl.floor_y;
-    const fx =
+    let fx =
       rawX > 0 && rawX <= 1
         ? Math.max(24, Math.min(660, Math.round(rawX * 800 - 55)))
         : rawX > 1
           ? rawX
           : 70 + (idx % 4) * 190;
-    const fy =
+    let fy =
       rawY > 0 && rawY <= 1
         ? Math.max(24, Math.min(390, Math.round(rawY * 500 - 45)))
         : rawY > 1
           ? rawY
           : 70 + Math.floor(idx / 4) * 150;
-    return { x: fx, y: fy };
-  };
 
-  // Compute bounding extent of coordinates so custom polygons/coords fit inside viewport cleanly
-  const coords = tables.map((t, idx) => toStageCoords(t, idx));
+    // De-collide overlapping cards (e.g. tables from multiple cameras sharing default coordinates)
+    let guard = 0;
+    while (
+      placed.some((p) => Math.abs(p.x - fx) < 130 && Math.abs(p.y - fy) < 102) &&
+      guard < 24
+    ) {
+      fx += 170;
+      if (fx > 640) {
+        fx = 60;
+        fy += 130;
+      }
+      guard += 1;
+    }
+    const pos = { x: fx, y: fy };
+    placed.push(pos);
+    return pos;
+  });
   const maxX = Math.max(800, ...coords.map((c) => c.x + 180));
   const maxY = Math.max(500, ...coords.map((c) => c.y + 150));
   const baseScale = Math.min(size.width / maxX, size.height / maxY);

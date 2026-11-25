@@ -292,7 +292,7 @@ export function TableDetailDrawer({
               <img
                 src={snapUrl}
                 alt={`Face-blurred zone crop for ${detail.table.table_code}`}
-                className="aspect-video w-full rounded-md object-cover"
+                className="max-h-[190px] w-full rounded-md object-contain bg-slate-950"
               />
             )}
           </div>

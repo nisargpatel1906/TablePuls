@@ -335,7 +335,7 @@ export default function PolygonCalibrationPage() {
         )}
 
         {canCalibrate && !loading && (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
             <div className="flex flex-col gap-3">
               <PolygonEditorCanvas
                 previewBase64={previewBase64}

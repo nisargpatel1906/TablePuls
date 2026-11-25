@@ -248,7 +248,7 @@ export default function LiveCameraWallPage() {
           </div>
         )}
 
-        {canViewCameras && loading && (
+        {canViewCameras && loading && cameras.length === 0 && (
           <div className="tp-glass rounded-xl border p-8 text-center text-sm text-[var(--text-secondary)]">
             Connecting to MediaMTX camera feeds...
           </div>
@@ -285,7 +285,9 @@ export default function LiveCameraWallPage() {
                 />
               ) : (
                 <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-300">
-                  Camera feed unavailable ({cam.status}). Verify RTSP/MediaMTX connectivity.
+                  {loading
+                    ? `Loading privacy-blurred preview for ${cam.name}...`
+                    : `Camera feed unavailable (${cam.status}). Verify RTSP/MediaMTX connectivity.`}
                 </div>
               );
 

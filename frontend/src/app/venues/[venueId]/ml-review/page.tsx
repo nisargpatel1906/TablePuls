@@ -305,14 +305,14 @@ export default function MLReviewPage() {
                 </span>
               </div>
 
-              <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-slate-900 p-2 text-center text-xs text-slate-300">
+              <div className="flex max-h-[250px] w-full items-center justify-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-slate-900 p-2 text-center text-xs text-slate-300">
                 {snapshotUrl ? (
                   // Authenticated face-blurred review crop fetched as Blob URL
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={snapshotUrl}
                     alt={`Face-blurred review crop for ${selectedItem.predicted_state}`}
-                    className="h-full w-full rounded-lg object-contain"
+                    className="max-h-[234px] w-auto rounded-lg object-contain"
                   />
                 ) : selectedItem.has_snapshot ? (
                   "Loading encrypted face-blurred review crop..."
