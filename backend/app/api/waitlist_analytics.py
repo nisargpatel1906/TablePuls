@@ -28,13 +28,14 @@ from app.db.models import (
 )
 from app.schemas.floor_ops import CreateWaitlistRequest, UpdateWaitlistRequest
 from app.services.audit import write_audit_log
+from app.services.realtime import ws_hub
 
 router = APIRouter(tags=["waitlist-analytics"])
 
 
 def _csv_safe(val: object) -> str:
     s = "" if val is None else str(val)
-    if s.startswith(("=", "+", "-", "@")):
+    if s.startswith(("=", "+", "-", "@", "\t", "\r")):
         return "'" + s
     return s
 
@@ -162,6 +163,7 @@ async def update_waitlist_entry(
     if body.notes is not None:
         entry.notes = body.notes.strip()
 
+    seated_tbl_payload: dict[str, Any] | None = None
     if body.status == "SEATED":
         if body.assigned_table_id is None:
             raise AppError(
@@ -213,6 +215,17 @@ async def update_waitlist_entry(
                 occurred_at=now,
             )
         )
+        seated_tbl_payload = {
+            "table_id": str(tbl.id),
+            "table_code": tbl.table_code,
+            "previous_state": prev,
+            "new_state": "OCCUPIED",
+            "guest_count": tbl.current_guest_count,
+            "occupied_since": tbl.occupied_since.isoformat() if tbl.occupied_since else None,
+            "confidence": 1.0,
+            "source": "MANUAL",
+            "toast_message": f"{tbl.table_code} seated {entry.party_name} ({entry.party_size} guests)",
+        }
     elif body.status is not None:
         entry.status = body.status
 
@@ -231,7 +244,45 @@ async def update_waitlist_entry(
         request=request,
     )
     await db.commit()
+    if seated_tbl_payload is not None:
+        await ws_hub.broadcast(
+            str(venue_id),
+            {"type": "table.state_changed", "data": seated_tbl_payload},
+        )
     return success_response(_waitlist_dict(entry, now))
+
+
+async def _compute_turn_durations(
+    db: AsyncSession, venue_id: uuid.UUID, org_id: uuid.UUID, start_dt: datetime, end_dt: datetime
+) -> list[float]:
+    """Compute actual completed dining turn durations (minutes) from TableStateEvent transitions."""
+    events = (
+        (
+            await db.execute(
+                select(TableStateEvent)
+                .where(
+                    TableStateEvent.venue_id == venue_id,
+                    TableStateEvent.organization_id == org_id,
+                    TableStateEvent.occurred_at >= start_dt,
+                    TableStateEvent.occurred_at <= end_dt,
+                    TableStateEvent.new_state.in_(["OCCUPIED", "NEEDS_CLEANING", "FREE"]),
+                )
+                .order_by(TableStateEvent.table_id.asc(), TableStateEvent.occurred_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    durations: list[float] = []
+    occ_start: dict[uuid.UUID, datetime] = {}
+    for ev in events:
+        if ev.new_state == "OCCUPIED" and ev.table_id not in occ_start:
+            occ_start[ev.table_id] = ev.occurred_at
+        elif ev.new_state in {"NEEDS_CLEANING", "FREE"} and ev.table_id in occ_start:
+            mins = (ev.occurred_at - occ_start.pop(ev.table_id)).total_seconds() / 60.0
+            if 2.0 <= mins <= 360.0:
+                durations.append(mins)
+    return durations
 
 
 @router.get("/api/v1/venues/{venue_id}/turnover-predictions")
@@ -260,6 +311,11 @@ async def get_turnover_predictions(
     )
 
     now = datetime.now(UTC)
+    hist_turns = await _compute_turn_durations(
+        db, venue_id, actor.organization_id, now - timedelta(days=30), now
+    )
+    hist_mean = sum(hist_turns) / len(hist_turns) if len(hist_turns) >= 3 else None
+
     ranked: list[dict[str, Any]] = []
     for t in tables:
         elapsed_min = (
@@ -269,12 +325,23 @@ async def get_turnover_predictions(
             min_eta, max_eta, conf_tier = 0, 0, "High"
         elif t.current_state == "NEEDS_CLEANING":
             min_eta, max_eta, conf_tier = 2, 5, "High"
+        elif t.predicted_free_at is not None and t.predicted_free_at > now:
+            rem = max(1.0, (t.predicted_free_at - now).total_seconds() / 60.0)
+            min_eta = max(1, int(round(rem * 0.8)))
+            max_eta = max(min_eta + 2, int(round(rem * 1.2)))
+            conf_tier = "Medium"
         else:
-            base_turn = 35.0 if t.seat_capacity <= 2 else (45.0 if t.seat_capacity <= 4 else 60.0)
+            base_turn = hist_mean if hist_mean is not None else (
+                35.0 if t.seat_capacity <= 2 else (45.0 if t.seat_capacity <= 4 else 60.0)
+            )
             rem = max(2.0, base_turn - elapsed_min)
             min_eta = max(1, int(round(rem * 0.75)))
             max_eta = max(min_eta + 2, int(round(rem * 1.25)))
-            conf_tier = "Medium" if elapsed_min >= 20.0 else "Low"
+            conf_tier = (
+                "High"
+                if (hist_mean is not None and elapsed_min >= 15.0)
+                else ("Medium" if elapsed_min >= 20.0 else "Low")
+            )
 
         ranked.append(
             {
@@ -292,10 +359,15 @@ async def get_turnover_predictions(
         )
 
     ranked.sort(key=lambda r: (r["eta_min_minutes"], r["seat_capacity"], r["table_code"]))
+    baseline_note = (
+        f"Using observed venue history ({len(hist_turns)} completed turns, avg {hist_mean:.1f}m)"
+        if hist_mean is not None
+        else f"Cold-start baseline by table capacity ({len(hist_turns)} completed turns recorded so far)"
+    )
     return success_response(
         {
             "party_size": party_size,
-            "baseline_note": "Using statistical 45m baseline turn estimate (improves with >= 7 days venue history)",
+            "baseline_note": baseline_note,
             "items": ranked,
         }
     )
@@ -431,6 +503,7 @@ async def get_peak_hours_analytics(
             await db.execute(
                 select(WaitlistEntry).where(
                     WaitlistEntry.venue_id == venue_id,
+                    WaitlistEntry.organization_id == actor.organization_id,
                     WaitlistEntry.status == "SEATED",
                     WaitlistEntry.seated_at.is_not(None),
                     WaitlistEntry.joined_at >= start_dt,
@@ -446,6 +519,8 @@ async def get_peak_hours_analytics(
         if w.seated_at is not None
     ]
     avg_wait = round(sum(wait_mins) / len(wait_mins), 1) if wait_mins else 0.0
+    turn_mins = await _compute_turn_durations(db, venue_id, actor.organization_id, start_dt, end_dt)
+    avg_turn = round(sum(turn_mins) / len(turn_mins), 1) if turn_mins else 0.0
 
     peak_hour_row = (
         max(hourly_series, key=lambda r: r["avg_occupancy_pct"]) if hourly_series else None
@@ -472,7 +547,7 @@ async def get_peak_hours_analytics(
                 "peak_occupancy_hour": peak_hour_row["hour"]
                 if peak_hour_row and peak_hour_row["sample_count"] > 0
                 else "N/A",
-                "avg_turn_minutes": 42.0 if snaps else 0.0,
+                "avg_turn_minutes": avg_turn,
                 "avg_wait_minutes": avg_wait,
                 "sla_breach_rate_pct": round((100.0 * sla_breach_count / len(snaps)), 1)
                 if snaps

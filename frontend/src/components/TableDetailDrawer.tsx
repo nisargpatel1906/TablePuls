@@ -35,6 +35,7 @@ export function TableDetailDrawer({
 }: TableDetailDrawerProps) {
   const { user } = useAuth();
   const [detail, setDetail] = useState<TableDetailData | null>(null);
+  const [snapUrl, setSnapUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -76,6 +77,28 @@ export function TableDetailDrawer({
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!detail || detail.table.id !== tableId || !detail.latest_snapshot_available) {
+      setSnapUrl(null);
+      return;
+    }
+    let active = true;
+    let objUrl: string | null = null;
+    apiFetch<Blob>(`/api/v1/venues/${venueId}/tables/${tableId}/latest-snapshot`)
+      .then((blob) => {
+        if (!active) return;
+        objUrl = URL.createObjectURL(blob);
+        setSnapUrl(objUrl);
+      })
+      .catch(() => {
+        if (active) setSnapUrl(null);
+      });
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [venueId, tableId, detail?.latest_snapshot_available, detail?.table.version]);
 
   const canFullOverride = hasCapability(user?.role, "tables.override_full");
   const canQuickStaffAction = hasCapability(user?.role, "tables.mark_clean_or_served");
@@ -135,6 +158,7 @@ export function TableDetailDrawer({
       setActionSuccess("Flagged detection to the ML Review Queue.");
       setShowFlag(false);
       setFlagReason("");
+      await loadDetail();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Failed to submit flag");
     } finally {
@@ -252,14 +276,25 @@ export function TableDetailDrawer({
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-            <span className="flex items-center gap-1.5 font-medium text-[var(--text-primary)]">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-              Privacy-Protected Zone Snapshot (Face Blur Active)
-            </span>
-            <span>
-              {detail.latest_snapshot_available ? "Crop stored (TTL active)" : "No crop saved"}
-            </span>
+          <div className="flex flex-col gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-2.5 text-xs text-[var(--text-secondary)]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium text-[var(--text-primary)]">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                Privacy-Protected Zone Snapshot (Face Blur Active)
+              </span>
+              <span>
+                {detail.latest_snapshot_available ? "Crop stored (TTL active)" : "No crop saved"}
+              </span>
+            </div>
+            {snapUrl && (
+              // Authenticated face-blurred crop fetched as Blob URL
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={snapUrl}
+                alt={`Face-blurred zone crop for ${detail.table.table_code}`}
+                className="aspect-video w-full rounded-md object-cover"
+              />
+            )}
           </div>
 
           {canQuickStaffAction && (

@@ -35,6 +35,13 @@ class CVSettings(BaseSettings):
     demo_video_path: str = Field(
         default="/app/data/demo/demo_floor.mp4", validation_alias="DEMO_VIDEO_PATH"
     )
+    api_internal_url: str = Field(
+        default="http://api:8000", validation_alias="API_INTERNAL_URL"
+    )
+    mediamtx_hook_secret: str = Field(
+        default="dev_only_replace_with_mediamtx_internal_secret",
+        validation_alias="MEDIAMTX_HOOK_SECRET",
+    )
     demo_mode: bool = Field(default=False, validation_alias="DEMO_MODE")
     target_fps: int = Field(default=2, ge=1, le=5, validation_alias="TARGET_FPS")
     model_version: str = Field(

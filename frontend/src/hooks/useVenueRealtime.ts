@@ -142,7 +142,8 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
                         ...tbl,
                         current_state: d.new_state,
                         current_guest_count: d.guest_count ?? tbl.current_guest_count,
-                        occupied_since: d.occupied_since ?? tbl.occupied_since,
+                        occupied_since:
+                          "occupied_since" in d ? d.occupied_since : tbl.occupied_since,
                         current_confidence: d.confidence ?? tbl.current_confidence,
                       }
                     : tbl,
@@ -161,13 +162,18 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
               if (msg.data?.message) {
                 pushToast(String(msg.data.message));
               }
-            } else if (msg.type === "system.ai_paused" && msg.data) {
+            } else if (
+              (msg.type === "system.ai_paused" || msg.type === "system.kill_switch_changed") &&
+              msg.data
+            ) {
+              const enabled =
+                "ai_inference_enabled" in msg.data
+                  ? Boolean(msg.data.ai_inference_enabled)
+                  : Boolean(msg.data.enabled);
               setSnapshot((prev) =>
-                prev ? { ...prev, ai_inference_enabled: Boolean(msg.data.enabled) } : prev,
+                prev ? { ...prev, ai_inference_enabled: enabled } : prev,
               );
-              pushToast(
-                msg.data.enabled ? "AI Inference Resumed" : "AI Inference Paused",
-              );
+              pushToast(enabled ? "AI Inference Resumed" : "AI Inference Paused");
             }
           } catch {
             // Ignore malformed WS frame

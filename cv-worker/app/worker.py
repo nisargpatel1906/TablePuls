@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -92,8 +93,20 @@ class CameraProcessor:
         valkey_client: Any | None = None,
     ) -> None:
         self.cfg = cam_cfg
-        self.detector = detector or PersonAndObjectDetector(device=get_cv_settings().ml_device)
-        self.cleanliness = cleanliness or CleanlinessClassifier(device=get_cv_settings().ml_device)
+        settings = get_cv_settings()
+        model_dir = Path(settings.ml_model_dir)
+        det_onnx = model_dir / "rfdetr-nano.onnx"
+        if not det_onnx.exists():
+            det_onnx = model_dir / "detector.onnx"
+        clean_onnx = model_dir / "cleanliness.onnx"
+        self.detector = detector or PersonAndObjectDetector(
+            onnx_path=det_onnx if det_onnx.exists() else None,
+            device=settings.ml_device,
+        )
+        self.cleanliness = cleanliness or CleanlinessClassifier(
+            onnx_path=clean_onnx if clean_onnx.exists() else None,
+            device=settings.ml_device,
+        )
         self.tracker = ByteTrackWrapper()
         self.kill_switch = kill_switch or KillSwitchClient(valkey_client)
         self._vk = valkey_client

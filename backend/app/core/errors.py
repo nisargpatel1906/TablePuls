@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -80,6 +82,36 @@ def register_exception_handlers(app: FastAPI) -> None:
         code = code_map.get(exc.status_code, "INTERNAL_ERROR")
         msg = exc.detail if isinstance(exc.detail, str) else "Request failed"
         return JSONResponse(status_code=exc.status_code, content=error_envelope(code, msg))
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(SQLAlchemyTimeoutError)
+    @app.exception_handler(DBAPIError)
+    @app.exception_handler(OSError)
+    async def handle_db_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content=error_envelope(
+                "SERVICE_UNAVAILABLE", "Database temporarily unavailable; please retry shortly"
+            ),
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def handle_integrity_error(_request: Request, exc: IntegrityError) -> JSONResponse:
+        detail = str(exc.orig or exc)
+        if "LAST_OWNER_PROTECTED" in detail:
+            return JSONResponse(
+                status_code=409,
+                content=error_envelope(
+                    "LAST_OWNER_PROTECTED",
+                    "At least one active OWNER is required per organization",
+                ),
+            )
+        return JSONResponse(
+            status_code=409,
+            content=error_envelope(
+                "VERSION_CONFLICT", "Database constraint conflict while persisting resource"
+            ),
+        )
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:

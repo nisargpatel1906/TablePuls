@@ -90,6 +90,8 @@ services:
       VALKEY_URL: ${VALKEY_URL:-redis://:change_me_valkey_password@valkey:6379/0}
       TABLEPULSE_DATA_KEY: ${TABLEPULSE_DATA_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       MEDIAMTX_INTERNAL_URL: ${MEDIAMTX_INTERNAL_URL:-rtsp://mediamtx:8554}
+      API_INTERNAL_URL: http://api:8000
+      MEDIAMTX_HOOK_SECRET: ${MEDIAMTX_HOOK_SECRET:-dev_only_replace_with_mediamtx_internal_secret}
       ML_DEVICE: ${ML_DEVICE:-cpu}
       ML_MODEL_DIR: ${ML_MODEL_DIR:-/app/data/models}
       SNAPSHOT_STORAGE_DIR: ${SNAPSHOT_STORAGE_DIR:-/app/data/snapshots}

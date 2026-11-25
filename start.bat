@@ -28,7 +28,7 @@ if errorlevel 1 (
     echo Waiting for Docker Engine to become ready...
     set /a DOCKER_WAIT=0
     :wait_docker
-    timeout /t 3 /nobreak >nul
+    ping -n 4 127.0.0.1 >nul
     docker info >nul 2>&1
     if not errorlevel 1 goto docker_ready
     set /a DOCKER_WAIT+=1
@@ -67,7 +67,7 @@ if !WAIT_TRIES! GEQ 45 (
     if not "%~1"=="--no-pause" pause
     exit /b 1
 )
-timeout /t 2 /nobreak >nul
+ping -n 3 127.0.0.1 >nul
 goto wait_http
 
 :ready

@@ -94,6 +94,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSessionData]);
 
   useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => {
+      void refreshAccessToken();
+    }, 12 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [user]);
+
+  useEffect(() => {
     const html = document.documentElement;
     if (theme === "dark") {
       html.classList.add("dark");

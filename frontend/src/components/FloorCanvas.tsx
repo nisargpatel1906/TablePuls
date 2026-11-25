@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Circle, Group, Layer, Rect, Stage, Text } from "react-konva";
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { TABLE_STATE_META, formatElapsed } from "@/lib/table-states";
+import { useAuth } from "@/providers/AuthProvider";
 import type { FloorTable } from "@/types/floor";
 
 interface FloorCanvasProps {
@@ -19,6 +20,8 @@ export default function FloorCanvas({
   nowMs,
   onSelectTable,
 }: FloorCanvasProps) {
+  const { theme } = useAuth();
+  const isDark = theme === "dark";
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 820, height: 500 });
   const [zoom, setZoom] = useState(1);
@@ -39,9 +42,28 @@ export default function FloorCanvas({
     return () => obs.disconnect();
   }, []);
 
+  const toStageCoords = (tbl: FloorTable, idx: number) => {
+    const rawX = tbl.floor_x;
+    const rawY = tbl.floor_y;
+    const fx =
+      rawX > 0 && rawX <= 1
+        ? Math.max(24, Math.min(660, Math.round(rawX * 800 - 55)))
+        : rawX > 1
+          ? rawX
+          : 70 + (idx % 4) * 190;
+    const fy =
+      rawY > 0 && rawY <= 1
+        ? Math.max(24, Math.min(390, Math.round(rawY * 500 - 45)))
+        : rawY > 1
+          ? rawY
+          : 70 + Math.floor(idx / 4) * 150;
+    return { x: fx, y: fy };
+  };
+
   // Compute bounding extent of coordinates so custom polygons/coords fit inside viewport cleanly
-  const maxX = Math.max(800, ...tables.map((t) => (t.floor_x || 0) + 180));
-  const maxY = Math.max(500, ...tables.map((t) => (t.floor_y || 0) + 150));
+  const coords = tables.map((t, idx) => toStageCoords(t, idx));
+  const maxX = Math.max(800, ...coords.map((c) => c.x + 180));
+  const maxY = Math.max(500, ...coords.map((c) => c.y + 150));
   const baseScale = Math.min(size.width / maxX, size.height / maxY);
   const effectiveScale = baseScale * zoom;
 
@@ -92,8 +114,10 @@ export default function FloorCanvas({
         <Layer>
           {tables.map((tbl, idx) => {
             const meta = TABLE_STATE_META[tbl.current_state] ?? TABLE_STATE_META.UNKNOWN;
-            const x = tbl.floor_x > 0 ? tbl.floor_x : 70 + (idx % 4) * 190;
-            const y = tbl.floor_y > 0 ? tbl.floor_y : 70 + Math.floor(idx / 4) * 150;
+            const { x, y } = coords[idx] ?? {
+              x: 70 + (idx % 4) * 190,
+              y: 70 + Math.floor(idx / 4) * 150,
+            };
             const isSelected = tbl.id === selectedTableId;
             const dash =
               tbl.current_state === "NEEDS_CLEANING" || tbl.current_state === "UNKNOWN"
@@ -108,6 +132,9 @@ export default function FloorCanvas({
                 ? formatElapsed(tbl.occupied_since, nowMs)
                 : "";
 
+            const cardWidth = tbl.shape === "BOOTH" ? 132 : 114;
+            const textWidth = cardWidth - 16;
+
             return (
               <Group
                 key={tbl.id}
@@ -121,45 +148,45 @@ export default function FloorCanvas({
                     x={55}
                     y={48}
                     radius={48}
-                    fill={meta.accentHex + "24"}
-                    stroke={isSelected ? "#0F172A" : meta.accentHex}
+                    fill={meta.accentHex + (isDark ? "38" : "24")}
+                    stroke={isSelected ? (isDark ? "#F8FAFC" : "#0F172A") : meta.accentHex}
                     strokeWidth={isSelected ? 4 : 2.5}
                     dash={dash}
                   />
                 ) : (
                   <Rect
-                    width={tbl.shape === "BOOTH" ? 132 : 114}
+                    width={cardWidth}
                     height={92}
                     cornerRadius={tbl.shape === "BOOTH" ? 20 : 12}
-                    fill={meta.accentHex + "24"}
-                    stroke={isSelected ? "#0F172A" : meta.accentHex}
+                    fill={meta.accentHex + (isDark ? "38" : "24")}
+                    stroke={isSelected ? (isDark ? "#F8FAFC" : "#0F172A") : meta.accentHex}
                     strokeWidth={isSelected ? 4 : 2.5}
                     dash={dash}
                   />
                 )}
                 <Text
-                  x={10}
+                  x={8}
                   y={16}
-                  width={94}
+                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
                   align="center"
                   text={tbl.table_code}
                   fontSize={16}
                   fontStyle="bold"
-                  fill="#0F172A"
+                  fill={isDark ? "#F8FAFC" : "#0F172A"}
                 />
                 <Text
-                  x={10}
+                  x={8}
                   y={38}
-                  width={94}
+                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
                   align="center"
                   text={`${tbl.current_guest_count}/${tbl.seat_capacity} guests`}
                   fontSize={12}
-                  fill="#334155"
+                  fill={isDark ? "#CBD5E1" : "#334155"}
                 />
                 <Text
-                  x={10}
+                  x={8}
                   y={58}
-                  width={94}
+                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
                   align="center"
                   text={dwell || meta.label}
                   fontSize={11}

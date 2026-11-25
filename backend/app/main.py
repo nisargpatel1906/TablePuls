@@ -12,9 +12,11 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import text
 
+from app.api.admin_ops import purge_expired_snapshots_once
 from app.api.admin_ops import router as admin_ops_router
 from app.api.auth import router as auth_router
 from app.api.floor_ops import router as floor_ops_router
@@ -22,11 +24,11 @@ from app.api.org_users import router as org_users_router
 from app.api.venues_cameras import router as venues_cameras_router
 from app.api.waitlist_analytics import router as waitlist_analytics_router
 from app.config import get_settings
-from app.core.errors import register_exception_handlers, success_response
+from app.core.errors import error_envelope, register_exception_handlers, success_response
 from app.core.logging import configure_logging
 from app.core.rbac import load_rbac_matrix
 from app.core.valkey_client import close_valkey, ping_valkey
-from app.db.base import get_engine
+from app.db.base import get_engine, get_session_factory
 from app.services.realtime import cv_stream_consumer_loop
 
 HTTP_REQUESTS = Counter(
@@ -41,6 +43,21 @@ HTTP_LATENCY = Histogram(
 )
 
 
+async def _retention_cleanup_loop(stop_event: asyncio.Event) -> None:
+    """Periodically purge expired face-blurred review crop snapshots per org retention policy."""
+    factory = get_session_factory()
+    while not stop_event.is_set():
+        try:
+            async with factory() as db:
+                await purge_expired_snapshots_once(db)
+        except Exception:
+            pass
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=3600.0)
+        except TimeoutError:
+            continue
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -49,26 +66,30 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     load_rbac_matrix()
     stop_event = asyncio.Event()
     consumer_task = None
+    retention_task = None
     if settings.tablepulse_env != "test":
         consumer_task = asyncio.create_task(cv_stream_consumer_loop(stop_event))
+        retention_task = asyncio.create_task(_retention_cleanup_loop(stop_event))
     try:
         yield
     finally:
         stop_event.set()
-        if consumer_task is not None:
-            consumer_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await consumer_task
+        for t in (consumer_task, retention_task):
+            if t is not None:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
         await close_valkey()
         await get_engine().dispose()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    is_prod = settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
     app = FastAPI(
         title="TablePulse API",
         version="1.0.0",
-        docs_url="/api/docs" if settings.app_env != "production" else None,
+        docs_url=None if is_prod else "/api/docs",
         redoc_url=None,
         lifespan=lifespan,
     )
@@ -91,7 +112,13 @@ def create_app() -> FastAPI:
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(service="api", request_id=req_id)
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            response = JSONResponse(
+                status_code=503,
+                content=error_envelope("SERVICE_UNAVAILABLE", "Service temporarily unavailable"),
+            )
         elapsed = time.perf_counter() - start
         path = request.url.path
         HTTP_REQUESTS.labels(request.method, path, str(response.status_code)).inc()
@@ -127,7 +154,7 @@ def create_app() -> FastAPI:
     async def health_check() -> Response:
         db_ok = False
         try:
-            async with get_engine().connect() as conn:
+            async with asyncio.timeout(2.5), get_engine().connect() as conn:
                 await conn.execute(text("SELECT 1"))
             db_ok = True
         except Exception:

@@ -9,6 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { TableDetailDrawer } from "@/components/TableDetailDrawer";
 import { TableStateBadge } from "@/components/TableStateBadge";
 import { useVenueRealtime } from "@/hooks/useVenueRealtime";
+import { t } from "@/lib/i18n";
 import { formatElapsed, TABLE_STATE_META, type TableState } from "@/lib/table-states";
 import { useAuth } from "@/providers/AuthProvider";
 import type { FloorTable } from "@/types/floor";
@@ -35,7 +36,7 @@ const FILTER_STATES: Array<"ALL" | TableState> = [
 export default function LiveFloorPage() {
   const params = useParams<{ venueId: string }>();
   const venueId = params?.venueId;
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, locale } = useAuth();
 
   const { snapshot, loading, error, connectionState, toastMessage, refresh } =
     useVenueRealtime(venueId, Boolean(user));
@@ -113,9 +114,9 @@ export default function LiveFloorPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Live Floor Map</h1>
+            <h1 className="text-xl font-bold tracking-tight">{t(locale, "floor.title")}</h1>
             <p className="text-xs text-[var(--text-secondary)]">
-              Real-time occupancy, service timers, and manual floor overrides
+              {t(locale, "floor.subtitle")}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -125,7 +126,7 @@ export default function LiveFloorPage() {
               className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold hover:opacity-80"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-              Refresh
+              {t(locale, "action.refresh")}
             </button>
             <div
               role="group"
@@ -143,7 +144,7 @@ export default function LiveFloorPage() {
                 }`}
               >
                 <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-                Map
+                {t(locale, "floor.view_map")}
               </button>
               <button
                 type="button"
@@ -156,7 +157,7 @@ export default function LiveFloorPage() {
                 }`}
               >
                 <List className="h-3.5 w-3.5" aria-hidden="true" />
-                List
+                {t(locale, "floor.view_list")}
               </button>
             </div>
           </div>
@@ -165,23 +166,23 @@ export default function LiveFloorPage() {
         {/* Top 4 KPI summary cards */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="tp-glass rounded-xl border p-3">
-            <p className="text-xs font-medium text-[var(--text-secondary)]">Occupied Tables</p>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">{t(locale, "floor.kpi_occupied")}</p>
             <p className="mt-1 text-2xl font-bold">
               {snapshot ? `${snapshot.kpis.occupied_tables} / ${snapshot.kpis.total_tables}` : "—"}
             </p>
           </div>
           <div className="tp-glass rounded-xl border p-3">
-            <p className="text-xs font-medium text-[var(--text-secondary)]">Seated Guests</p>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">{t(locale, "floor.kpi_guests")}</p>
             <p className="mt-1 text-2xl font-bold">
               {snapshot ? `${snapshot.kpis.seated_guests} / ${snapshot.kpis.total_seats}` : "—"}
             </p>
           </div>
           <div className="tp-glass rounded-xl border p-3">
-            <p className="text-xs font-medium text-[var(--text-secondary)]">Needs Action</p>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">{t(locale, "floor.kpi_action")}</p>
             <p className="mt-1 text-2xl font-bold text-amber-600">{needsActionCount}</p>
           </div>
           <div className="tp-glass rounded-xl border p-3">
-            <p className="text-xs font-medium text-[var(--text-secondary)]">Floor Capacity</p>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">{t(locale, "floor.kpi_capacity")}</p>
             <p className="mt-1 text-2xl font-bold">
               {snapshot ? `${snapshot.kpis.capacity_pct}%` : "—"}
             </p>
@@ -199,7 +200,7 @@ export default function LiveFloorPage() {
               <input
                 type="search"
                 aria-label="Search tables"
-                placeholder="Search table code..."
+                placeholder={t(locale, "floor.search")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] py-1.5 pl-8 pr-3 text-xs"
@@ -213,7 +214,7 @@ export default function LiveFloorPage() {
             >
               {sections.map((sec) => (
                 <option key={sec} value={sec}>
-                  {sec === "ALL" ? "All Sections" : sec}
+                  {sec === "ALL" ? t(locale, "floor.all_sections") : sec}
                 </option>
               ))}
             </select>
@@ -232,7 +233,7 @@ export default function LiveFloorPage() {
                     : "border border-[var(--border-subtle)] bg-[var(--surface-solid)] text-[var(--text-secondary)]"
                 }`}
               >
-                {st === "ALL" ? "All States" : TABLE_STATE_META[st].label}
+                {st === "ALL" ? t(locale, "floor.all_states") : t(locale, `state.${st}`)}
               </button>
             ))}
           </div>
@@ -345,7 +346,7 @@ export default function LiveFloorPage() {
               {/* Colorblind-safe State Legend */}
               <div className="tp-glass flex flex-wrap items-center gap-2 rounded-xl border p-3">
                 <span className="mr-1 text-xs font-semibold text-[var(--text-secondary)]">
-                  State Legend:
+                  {t(locale, "floor.legend")}
                 </span>
                 {(Object.keys(TABLE_STATE_META) as TableState[]).map((st) => (
                   <div key={st} className="flex items-center gap-1">

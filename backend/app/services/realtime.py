@@ -86,7 +86,7 @@ async def process_cv_stream_event(fields: dict[str, Any]) -> None:
         if tbl is None or tbl.deleted_at is not None:
             return
 
-        if tbl.current_state == "RESERVED" and new_state == "FREE":
+        if tbl.current_state == "RESERVED":
             return
 
         tbl.current_state = new_state
@@ -179,12 +179,14 @@ async def process_cv_stream_event(fields: dict[str, Any]) -> None:
         if fields.get("enqueue_review") == "1":
             snap_path: str | None = None
             b64_crop = fields.get("blurred_crop_b64")
-            if b64_crop:
-                snap_dir = Path(get_settings().snapshot_storage_dir)
-                snap_dir.mkdir(parents=True, exist_ok=True)
-                fpath = snap_dir / f"{uuid7()}.jpg"
-                fpath.write_bytes(base64.b64decode(str(b64_crop)))
-                snap_path = str(fpath)
+            if b64_crop and get_settings().review_crops_enabled:
+                raw_bytes = base64.b64decode(str(b64_crop))
+                if raw_bytes.startswith(b"\xff\xd8\xff"):
+                    snap_dir = Path(get_settings().snapshot_storage_dir) / str(org_id)
+                    snap_dir.mkdir(parents=True, exist_ok=True)
+                    fpath = snap_dir / f"{uuid7()}.jpg"
+                    fpath.write_bytes(raw_bytes)
+                    snap_path = str(fpath)
             db.add(
                 MLReviewItem(
                     id=uuid7(),

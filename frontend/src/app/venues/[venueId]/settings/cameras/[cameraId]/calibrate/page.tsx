@@ -133,13 +133,15 @@ export default function PolygonCalibrationPage() {
       return;
     }
     const nextCode = `T${tables.length + 1}`;
+    const avgX = draftPoints.reduce((s, p) => s + p.x, 0) / Math.max(1, draftPoints.length);
+    const avgY = draftPoints.reduce((s, p) => s + p.y, 0) / Math.max(1, draftPoints.length);
     const nextTbl: CalibrationTable = {
       table_code: nextCode,
       section_name: "Main",
       seat_capacity: 4,
       polygon_json: draftPoints,
-      floor_x: 100 + tables.length * 140,
-      floor_y: 120,
+      floor_x: Math.round(Math.max(0.05, Math.min(0.95, avgX)) * 1000) / 1000,
+      floor_y: Math.round(Math.max(0.05, Math.min(0.95, avgY)) * 1000) / 1000,
       shape: "RECT",
       version: 1,
     };
@@ -163,8 +165,8 @@ export default function PolygonCalibrationPage() {
         { x: Math.min(0.95, x0 + 0.18), y: 0.42 },
         { x: x0, y: 0.42 },
       ],
-      floor_x: 90 + tables.length * 140,
-      floor_y: 120,
+      floor_x: Math.round(Math.min(0.9, x0 + 0.09) * 1000) / 1000,
+      floor_y: 0.3,
       shape: "RECT",
       version: 1,
     };
@@ -175,7 +177,18 @@ export default function PolygonCalibrationPage() {
   async function handleSave() {
     setError(null);
     setSuccessMsg(null);
-    for (const tbl of tables) {
+    const normalizedTables = tables.map((tbl) => ({
+      ...tbl,
+      floor_x:
+        tbl.floor_x > 1
+          ? Math.max(0, Math.min(1, Math.round((tbl.floor_x / 800) * 1000) / 1000))
+          : Math.max(0, Math.min(1, Math.round(tbl.floor_x * 1000) / 1000)),
+      floor_y:
+        tbl.floor_y > 1
+          ? Math.max(0, Math.min(1, Math.round((tbl.floor_y / 500) * 1000) / 1000))
+          : Math.max(0, Math.min(1, Math.round(tbl.floor_y * 1000) / 1000)),
+    }));
+    for (const tbl of normalizedTables) {
       const err = validatePolygonPoints(tbl.polygon_json);
       if (err) {
         setError(`Table ${tbl.table_code}: ${err}`);
@@ -191,7 +204,7 @@ export default function PolygonCalibrationPage() {
         method: "PUT",
         body: JSON.stringify({
           exclusion_polygons_json: exclusionZones,
-          tables,
+          tables: normalizedTables,
         }),
       });
       setTables(roundTables(res.tables));

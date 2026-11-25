@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import hmac
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +12,8 @@ from typing import Annotated, Any
 from urllib.parse import parse_qs
 
 import cv2
-from fastapi import APIRouter, Depends, Request
+import numpy as np
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,9 +30,9 @@ from app.core.security import (
     verify_stream_token,
 )
 from app.core.ssrf import mask_stream_url, validate_rtsp_url
-from app.core.valkey_client import publish_cv_control
+from app.core.valkey_client import publish_cv_control, set_kill_switch_cache
 from app.db.base import get_db, uuid7
-from app.db.models import AlertRule, Camera, DiningTable, Venue
+from app.db.models import AlertRule, Camera, DiningTable, SystemSetting, Venue
 from app.schemas.venues_cameras import (
     BulkPolygonsRequest,
     CreateCameraRequest,
@@ -195,7 +198,7 @@ async def update_venue(
 @router.get("/api/v1/venues/{venue_id}/cameras")
 async def list_cameras(
     venue_id: uuid.UUID,
-    actor: Annotated[Any, Depends(require_venue_role(capability="cameras.manage"))],
+    actor: Annotated[Any, Depends(require_venue_role(capability="cameras.live.view"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     """API-008 (list): List venue cameras with masked URLs."""
@@ -217,6 +220,7 @@ async def list_cameras(
             await db.execute(
                 select(DiningTable).where(
                     DiningTable.venue_id == venue_id,
+                    DiningTable.organization_id == actor.organization_id,
                     DiningTable.deleted_at.is_(None),
                 )
             )
@@ -314,9 +318,13 @@ async def update_camera(
         raise AppError(404, "RESOURCE_NOT_FOUND", "Camera not found")
 
     before = _camera_dict(cam)
+    settings = get_settings()
+    prev_type = cam.stream_type
     if body.name is not None:
         cam.name = body.name.strip()
     if body.stream_type is not None:
+        if body.stream_type == "DEMO_MP4" and not settings.demo_mode:
+            raise AppError(400, "VALIDATION_ERROR", "DEMO_MP4 cameras require DEMO_MODE=true")
         cam.stream_type = body.stream_type
     if body.stream_url is not None:
         url = (
@@ -325,6 +333,9 @@ async def update_camera(
             else body.stream_url.strip()
         )
         cam.stream_url_encrypted = encrypt_field(url)
+    elif prev_type in {"RTSP", "RTSPS"} and cam.stream_type == "DEMO_MP4":
+        # Prevent unmasked RTSP credential URL exposure after switching to DEMO_MP4
+        cam.stream_url_encrypted = encrypt_field("demo://sample_floor.mp4")
     if body.username is not None or body.password is not None:
         cam.credentials_encrypted = encrypt_field(f"{body.username or ''}:{body.password or ''}")
     if body.target_fps is not None:
@@ -395,6 +406,132 @@ async def delete_camera(
     return success_response({"deleted": True, "camera_id": str(camera_id)})
 
 
+def _read_camera_frame_sync(stream_type: str, raw_url: str, fallback_demo_path: str) -> tuple[bool, Any]:
+    if stream_type == "DEMO_MP4":
+        demo_root = Path(fallback_demo_path).resolve().parent
+        demo_path = Path(fallback_demo_path)
+        if raw_url and not raw_url.startswith("demo://"):
+            cand = Path(raw_url).resolve()
+            if cand.is_relative_to(demo_root) and cand.is_file():
+                demo_path = cand
+        if demo_path.exists():
+            cap = cv2.VideoCapture(str(demo_path))
+            ok, read_frame = cap.read()
+            cap.release()
+            if ok and read_frame is not None:
+                return True, read_frame
+        return True, generate_demo_floor_frame(1280, 720)
+
+    cap = cv2.VideoCapture(raw_url)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    ok = False
+    frame: Any = None
+    if cap.isOpened():
+        ok, frame = cap.read()
+    cap.release()
+    return ok, frame
+
+
+def _apply_exclusions_and_blur(frame: Any, exclusion_zones: list[Any] | None) -> bytes:
+    out = frame.copy()
+    h, w = out.shape[:2]
+    for zone in exclusion_zones or []:
+        if isinstance(zone, list) and len(zone) >= 3:
+            pts = np.array(
+                [
+                    [int(max(0, min(w - 1, float(p["x"]) * w))), int(max(0, min(h - 1, float(p["y"]) * h)))]
+                    for p in zone
+                    if isinstance(p, dict) and "x" in p and "y" in p
+                ],
+                dtype=np.int32,
+            )
+            if len(pts) >= 3:
+                cv2.fillPoly(out, [pts], (0, 0, 0))
+    return blur_faces_in_bgr(out)
+
+
+async def _capture_camera_preview(
+    cam: Camera, db: AsyncSession
+) -> JSONResponse:
+    raw_url = decrypt_field(cam.stream_url_encrypted)
+    if cam.stream_type != "DEMO_MP4":
+        validate_rtsp_url(raw_url)
+
+    ok, frame = await asyncio.to_thread(
+        _read_camera_frame_sync,
+        cam.stream_type,
+        raw_url,
+        get_settings().demo_video_path,
+    )
+    if not ok or frame is None:
+        cam.status = "OFFLINE"
+        await db.commit()
+        raise AppError(
+            422,
+            "CAMERA_UNREACHABLE",
+            "Failed to connect or decode frame from RTSP camera",
+            {
+                "diagnostic": "Verify host reachability, port 554, credentials, and H.264/H.265 stream"
+            },
+        )
+
+    h, w = frame.shape[:2]
+    if w < 640 or h < 480:
+        raise AppError(
+            422,
+            "CAMERA_UNREACHABLE",
+            f"Stream resolution {w}x{h} is below minimum 640x480",
+        )
+
+    try:
+        blurred_jpeg = await asyncio.to_thread(
+            _apply_exclusions_and_blur, frame, cam.exclusion_polygons_json
+        )
+    except FaceBlurError as exc:
+        raise AppError(
+            500, "INTERNAL_ERROR", f"Frame dropped due to privacy blur failure: {exc}"
+        ) from exc
+
+    cam.status = "ONLINE"
+    cam.last_heartbeat_at = datetime.now(UTC)
+    await db.commit()
+
+    return success_response(
+        {
+            "camera_id": str(cam.id),
+            "status": "ONLINE",
+            "width": w,
+            "height": h,
+            "face_blurred": True,
+            "preview_jpeg_base64": base64.b64encode(blurred_jpeg).decode("ascii"),
+        }
+    )
+
+
+@router.get("/api/v1/venues/{venue_id}/cameras/{camera_id}/preview")
+async def get_camera_preview(
+    venue_id: uuid.UUID,
+    camera_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="cameras.live.view"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Blurred live preview snapshot for Live Camera Wall viewers (including conditional HOST)."""
+    cam = (
+        await db.execute(
+            select(Camera).where(
+                Camera.id == camera_id,
+                Camera.venue_id == venue_id,
+                Camera.organization_id == actor.organization_id,
+                Camera.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if cam is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Camera not found")
+    return await _capture_camera_preview(cam, db)
+
+
 @router.post("/api/v1/venues/{venue_id}/cameras/{camera_id}/test")
 async def test_camera_connection(
     venue_id: uuid.UUID,
@@ -415,69 +552,7 @@ async def test_camera_connection(
     ).scalar_one_or_none()
     if cam is None:
         raise AppError(404, "RESOURCE_NOT_FOUND", "Camera not found")
-
-    raw_url = decrypt_field(cam.stream_url_encrypted)
-    frame: Any = None
-    if cam.stream_type == "DEMO_MP4":
-        demo_path = Path(raw_url if Path(raw_url).exists() else get_settings().demo_video_path)
-        if demo_path.exists():
-            cap = cv2.VideoCapture(str(demo_path))
-            ok, read_frame = cap.read()
-            cap.release()
-            if ok:
-                frame = read_frame
-        if frame is None:
-            frame = generate_demo_floor_frame(1280, 720)
-    else:
-        validate_rtsp_url(raw_url)
-        cap = cv2.VideoCapture(raw_url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
-        ok = False
-        if cap.isOpened():
-            ok, frame = cap.read()
-        cap.release()
-        if not ok or frame is None:
-            cam.status = "OFFLINE"
-            await db.commit()
-            raise AppError(
-                422,
-                "CAMERA_UNREACHABLE",
-                "Failed to connect or decode frame from RTSP camera",
-                {
-                    "diagnostic": "Verify host reachability, port 554, credentials, and H.264/H.265 stream"
-                },
-            )
-
-    h, w = frame.shape[:2]
-    if w < 640 or h < 480:
-        raise AppError(
-            422,
-            "CAMERA_UNREACHABLE",
-            f"Stream resolution {w}x{h} is below minimum 640x480",
-        )
-
-    try:
-        blurred_jpeg = blur_faces_in_bgr(frame)
-    except FaceBlurError as exc:
-        raise AppError(
-            500, "INTERNAL_ERROR", f"Frame dropped due to privacy blur failure: {exc}"
-        ) from exc
-
-    cam.status = "ONLINE"
-    cam.last_heartbeat_at = datetime.now(UTC)
-    await db.commit()
-
-    return success_response(
-        {
-            "camera_id": str(cam.id),
-            "status": "ONLINE",
-            "width": w,
-            "height": h,
-            "face_blurred": True,
-            "preview_jpeg_base64": base64.b64encode(blurred_jpeg).decode("ascii"),
-        }
-    )
+    return await _capture_camera_preview(cam, db)
 
 
 @router.get("/api/v1/venues/{venue_id}/cameras/{camera_id}/polygons")
@@ -767,8 +842,100 @@ async def mediamtx_auth_hook(body: MediaAuthHookRequest) -> JSONResponse:
         raise AppError(403, "AUTH_FORBIDDEN", "Missing stream authorization token")
 
     claims = verify_stream_token(raw_token)
+    token_action = str(claims.get("action", "read"))
+    if body.action and body.action != token_action:
+        raise AppError(403, "AUTH_FORBIDDEN", "Stream token not valid for requested action")
     expected_path = f"cam-{claims['camera_id']}"
-    if body.path and expected_path not in body.path:
+    clean_path = body.path.strip("/")
+    if not clean_path or (clean_path != expected_path and not clean_path.startswith(f"{expected_path}/")):
         raise AppError(403, "AUTH_FORBIDDEN", "Stream token does not match requested camera path")
 
     return success_response({"authorized": True, "camera_id": claims["camera_id"]})
+
+
+@router.get("/api/v1/internal/cv-cameras")
+async def list_internal_cv_cameras(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_secret: Annotated[str | None, Header(alias="X-Internal-Secret")] = None,
+) -> JSONResponse:
+    """Internal CV-worker sync endpoint returning active cameras, ROIs, and org thresholds."""
+    expected = get_settings().mediamtx_hook_secret
+    if not x_internal_secret or not hmac.compare_digest(x_internal_secret, expected):
+        raise AppError(403, "AUTH_FORBIDDEN", "Invalid internal worker secret")
+
+    cams = (
+        (
+            await db.execute(
+                select(Camera).where(Camera.deleted_at.is_(None), Camera.status != "DISABLED")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    sys_rows = (await db.execute(select(SystemSetting))).scalars().all()
+    org_ai = {s.organization_id: bool(s.ai_inference_enabled) for s in sys_rows}
+    for org_id, enabled in org_ai.items():
+        await set_kill_switch_cache(str(org_id), enabled)
+
+    rules_rows = (await db.execute(select(AlertRule).where(AlertRule.deleted_at.is_(None)))).scalars().all()
+    venue_rules: dict[uuid.UUID, AlertRule] = {}
+    for r in rules_rows:
+        if r.section_name is None or r.venue_id not in venue_rules:
+            venue_rules[r.venue_id] = r
+
+    tables_rows = (
+        (
+            await db.execute(
+                select(DiningTable).where(
+                    DiningTable.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tables_by_cam: dict[uuid.UUID, list[DiningTable]] = {}
+    for t in tables_rows:
+        if t.camera_id is not None:
+            tables_by_cam.setdefault(t.camera_id, []).append(t)
+
+    payload_cams: list[dict[str, Any]] = []
+    for cam in cams:
+        rule = venue_rules.get(cam.venue_id)
+        cam_tables = tables_by_cam.get(cam.id, [])
+        if not cam_tables:
+            continue
+        payload_cams.append(
+            {
+                "camera_id": str(cam.id),
+                "venue_id": str(cam.venue_id),
+                "organization_id": str(cam.organization_id),
+                "stream_url": decrypt_field(cam.stream_url_encrypted),
+                "stream_type": cam.stream_type,
+                "target_fps": cam.target_fps,
+                "face_blur_enabled": cam.face_blur_enabled,
+                "ai_inference_enabled": org_ai.get(cam.organization_id, False),
+                "exclusion_polygons_json": cam.exclusion_polygons_json or [],
+                "tables": [
+                    {
+                        "table_id": str(t.id),
+                        "table_code": t.table_code,
+                        "venue_id": str(t.venue_id),
+                        "organization_id": str(t.organization_id),
+                        "polygon_json": t.polygon_json or [],
+                        "rules": {
+                            "occupancy_debounce_sec": rule.occupancy_debounce_sec if rule else 10,
+                            "departure_debounce_sec": rule.departure_debounce_sec if rule else 20,
+                            "unattended_service_sec": rule.unattended_service_sec if rule else 300,
+                            "cleaning_alert_delay_sec": rule.cleaning_alert_delay_sec if rule else 120,
+                            "min_confidence": rule.min_confidence if rule else 0.65,
+                            "require_bussing_confirmation": (
+                                rule.require_bussing_confirmation if rule else False
+                            ),
+                        },
+                    }
+                    for t in cam_tables
+                ],
+            }
+        )
+    return success_response({"cameras": payload_cams})

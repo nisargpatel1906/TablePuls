@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -50,6 +50,7 @@ from app.schemas.auth import (
     ResetPasswordRequest,
 )
 from app.services.audit import write_audit_log
+from app.services.email import send_email_if_configured
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -57,14 +58,25 @@ REFRESH_COOKIE_NAME = "tp_refresh_token"
 _local_ws_tickets: dict[str, dict[str, str]] = {}
 
 
+def _is_prod_env() -> bool:
+    settings = get_settings()
+    return settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if fwd:
+        return fwd
+    return request.client.host if request.client else "unknown"
+
+
 def _set_refresh_cookie(response: JSONResponse, raw_token: str) -> None:
     settings = get_settings()
-    is_prod = settings.app_env.lower() == "production"
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=raw_token,
         httponly=True,
-        secure=is_prod,
+        secure=_is_prod_env(),
         samesite="strict",
         path="/api/v1/auth",
         max_age=settings.refresh_token_expire_days * 86400,
@@ -72,12 +84,11 @@ def _set_refresh_cookie(response: JSONResponse, raw_token: str) -> None:
 
 
 def _clear_refresh_cookie(response: JSONResponse) -> None:
-    settings = get_settings()
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
         path="/api/v1/auth",
         httponly=True,
-        secure=settings.app_env.lower() == "production",
+        secure=_is_prod_env(),
         samesite="strict",
     )
 
@@ -114,6 +125,9 @@ async def bootstrap_owner(
 ) -> JSONResponse:
     """API-001: One-time atomic organization + OWNER creation when users count == 0."""
     validate_password_strength(body.password)
+
+    if db.bind and db.bind.dialect.name == "postgresql":
+        await db.execute(text("SELECT pg_advisory_xact_lock(7421001)"))
 
     existing_count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
     if int(existing_count) > 0:
@@ -197,7 +211,7 @@ async def login(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     """API-002: Email/password Argon2id login with rate limiting and HttpOnly refresh cookie."""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     email_norm = body.email.lower().strip()
 
     ip_ok, ip_retry = await check_rate_limit(f"login:ip:{client_ip}", 10, 60, fail_closed=True)
@@ -285,7 +299,7 @@ async def demo_login(
     if not settings.demo_mode:
         raise AppError(403, "AUTH_FORBIDDEN", "Demo mode is disabled")
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     ip_ok, ip_retry = await check_rate_limit(f"demo-login:ip:{client_ip}", 20, 60, fail_closed=True)
     if not ip_ok:
         raise AppError(
@@ -359,8 +373,8 @@ async def demo_login(
                     "Main",
                     4,
                     [[0.08, 0.14], [0.28, 0.14], [0.28, 0.38], [0.08, 0.38]],
-                    140.0,
-                    140.0,
+                    0.18,
+                    0.26,
                     "RECT",
                     "OCCUPIED",
                     2,
@@ -372,8 +386,8 @@ async def demo_login(
                     "Main",
                     2,
                     [[0.36, 0.14], [0.54, 0.14], [0.54, 0.38], [0.36, 0.38]],
-                    360.0,
-                    140.0,
+                    0.45,
+                    0.26,
                     "CIRCLE",
                     "NEEDS_CLEANING",
                     0,
@@ -385,8 +399,8 @@ async def demo_login(
                     "Patio",
                     6,
                     [[0.62, 0.18], [0.86, 0.18], [0.86, 0.44], [0.62, 0.44]],
-                    580.0,
-                    160.0,
+                    0.74,
+                    0.31,
                     "BOOTH",
                     "FREE",
                     0,
@@ -484,12 +498,13 @@ async def refresh_session(
         raise AppError(401, "AUTH_UNAUTHORIZED", "Missing refresh cookie")
 
     token_h = hash_token(tp_refresh_token)
-    res = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_h,
-            RefreshToken.token_type == "REFRESH",
-        )
+    q_tok = select(RefreshToken).where(
+        RefreshToken.token_hash == token_h,
+        RefreshToken.token_type == "REFRESH",
     )
+    if db.bind and db.bind.dialect.name == "postgresql":
+        q_tok = q_tok.with_for_update()
+    res = await db.execute(q_tok)
     token_row = res.scalar_one_or_none()
     if token_row is None:
         raise AppError(401, "AUTH_UNAUTHORIZED", "Invalid refresh token")
@@ -603,7 +618,7 @@ async def forgot_password(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     """API-005 (part 1): Always returns generic 200 to prevent email enumeration."""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     ok, retry = await check_rate_limit(f"forgot:ip:{client_ip}", 10, 60, fail_closed=True)
     if not ok:
         raise AppError(
@@ -613,7 +628,7 @@ async def forgot_password(
     res = await db.execute(select(User).where(User.email == body.email.lower().strip()))
     user = res.scalar_one_or_none()
     if user is not None and user.is_active:
-        _, token_h = generate_opaque_token()
+        raw_reset, token_h = generate_opaque_token()
         db.add(
             RefreshToken(
                 id=uuid7(),
@@ -635,6 +650,12 @@ async def forgot_password(
             request=request,
         )
         await db.commit()
+        reset_url = f"{get_settings().public_app_url.rstrip('/')}/reset-password?token={raw_reset}"
+        await send_email_if_configured(
+            user.email,
+            "TablePulse Password Reset",
+            f"Reset your TablePulse password (expires in 30 minutes): {reset_url}",
+        )
 
     return success_response(
         {"message": "If an account exists for that email, a reset link has been sent."}
@@ -730,8 +751,19 @@ async def accept_invite(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JSONResponse:
     """Complete account creation from an invite token and log user in."""
+    client_ip = _client_ip(request)
+    ip_ok, ip_retry = await check_rate_limit(f"accept-invite:ip:{client_ip}", 15, 60, fail_closed=True)
+    if not ip_ok:
+        raise AppError(
+            429,
+            "RATE_LIMITED",
+            "Too many invite acceptance attempts. Please wait and try again.",
+            headers={"Retry-After": str(ip_retry)},
+        )
+
+    invite_hash = hash_token(body.token)
     if idempotency_key:
-        cached = await check_and_store_idempotency(f"invite-accept:{idempotency_key}")
+        cached = await check_and_store_idempotency(f"invite-accept:{invite_hash}:{idempotency_key}")
         if cached is not None:
             return success_response(cached, status_code=201)
 
@@ -739,7 +771,7 @@ async def accept_invite(
     now = datetime.now(UTC)
     res = await db.execute(
         select(RefreshToken).where(
-            RefreshToken.token_hash == hash_token(body.token),
+            RefreshToken.token_hash == invite_hash,
             RefreshToken.token_type == "INVITE",
         )
     )
@@ -808,7 +840,7 @@ async def accept_invite(
         "user": _user_dict(user),
     }
     if idempotency_key:
-        await check_and_store_idempotency(f"invite-accept:{idempotency_key}", payload)
+        await check_and_store_idempotency(f"invite-accept:{invite_hash}:{idempotency_key}", payload)
     resp = success_response(payload, status_code=201)
     _set_refresh_cookie(resp, raw_refresh)
     return resp
@@ -865,15 +897,14 @@ async def get_me(
 
 
 async def consume_ws_ticket(ticket: str) -> dict[str, str] | None:
-    """Validate and consume a single-use WebSocket ticket."""
+    """Validate and atomically consume a single-use WebSocket ticket."""
     import json
 
     try:
         client = get_valkey()
         key = f"tp:ws_ticket:{ticket}"
-        raw = await client.get(key)
+        raw = await client.getdel(key)
         if raw:
-            await client.delete(key)
             return dict(json.loads(raw))
     except Exception:
         pass

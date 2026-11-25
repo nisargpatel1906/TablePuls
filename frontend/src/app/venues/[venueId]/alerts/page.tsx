@@ -135,7 +135,7 @@ export default function AlertsQueuePage() {
                 <option value="UNATTENDED_TABLE">Unattended Service</option>
                 <option value="NEEDS_CLEANING">Needs Cleaning</option>
                 <option value="CAMERA_OFFLINE">Camera Offline</option>
-                <option value="HIGH_OCCUPANCY">High Occupancy</option>
+                <option value="LOW_CONFIDENCE">Low Confidence</option>
               </select>
             </div>
 

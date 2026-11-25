@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Lock, RefreshCw, ShieldCheck, Video } from "lucide-react";
@@ -18,6 +18,69 @@ interface PreviewPayload {
   height: number;
   face_blurred: boolean;
   preview_jpeg_base64: string;
+}
+
+function WhepVideo({
+  whepUrl,
+  cameraName,
+  fallback,
+}: {
+  whepUrl: string;
+  cameraName: string;
+  fallback: React.ReactNode;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [liveReady, setLiveReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pc: RTCPeerConnection | null = null;
+    async function startWhep() {
+      if (typeof RTCPeerConnection === "undefined") return;
+      try {
+        pc = new RTCPeerConnection();
+        pc.addTransceiver("video", { direction: "recvonly" });
+        pc.ontrack = (ev) => {
+          if (cancelled || !videoRef.current) return;
+          if (ev.streams[0]) {
+            videoRef.current.srcObject = ev.streams[0];
+            setLiveReady(true);
+          }
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const resp = await fetch(whepUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/sdp" },
+          body: offer.sdp,
+        });
+        if (!resp.ok || cancelled) return;
+        const answerSdp = await resp.text();
+        await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      } catch {
+        if (!cancelled) setLiveReady(false);
+      }
+    }
+    void startWhep();
+    return () => {
+      cancelled = true;
+      pc?.close();
+    };
+  }, [whepUrl]);
+
+  return (
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        aria-label={`Live WebRTC stream for ${cameraName}`}
+        className={`h-full w-full object-cover ${liveReady ? "block" : "hidden"}`}
+      />
+      {!liveReady && fallback}
+    </>
+  );
 }
 
 export default function LiveCameraWallPage() {
@@ -48,6 +111,27 @@ export default function LiveCameraWallPage() {
     return () => window.clearInterval(t);
   }, []);
 
+  const refreshPreviews = useCallback(
+    async (camList: CameraItem[]) => {
+      if (!venueId || camList.length === 0) return;
+      const nextPreviews: Record<string, PreviewPayload> = {};
+      await Promise.all(
+        camList.map(async (cam) => {
+          try {
+            const snap = await apiFetch<PreviewPayload>(
+              `/api/v1/venues/${venueId}/cameras/${cam.id}/preview`,
+            );
+            nextPreviews[cam.id] = snap;
+          } catch {
+            // Camera offline / unreachable shown cleanly on card
+          }
+        }),
+      );
+      setPreviews((prev) => ({ ...prev, ...nextPreviews }));
+    },
+    [venueId],
+  );
+
   const loadFeeds = useCallback(async () => {
     if (!venueId || !canViewCameras) {
       setLoading(false);
@@ -62,34 +146,28 @@ export default function LiveCameraWallPage() {
       ]);
       setCameras(camRes.items);
       setTables(floorRes.tables);
-
-      const nextPreviews: Record<string, PreviewPayload> = {};
-      await Promise.all(
-        camRes.items.map(async (cam) => {
-          try {
-            const snap = await apiFetch<PreviewPayload>(
-              `/api/v1/venues/${venueId}/cameras/${cam.id}/test`,
-              { method: "POST" },
-            );
-            nextPreviews[cam.id] = snap;
-          } catch {
-            // Camera offline / unreachable shown cleanly on card
-          }
-        }),
-      );
-      setPreviews(nextPreviews);
+      await refreshPreviews(camRes.items);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load cameras");
     } finally {
       setLoading(false);
     }
-  }, [venueId, canViewCameras]);
+  }, [venueId, canViewCameras, refreshPreviews]);
 
   useEffect(() => {
     if (!authLoading && user) {
       void loadFeeds();
     }
   }, [authLoading, user, loadFeeds]);
+
+  // Periodically refresh blurred snapshots for near-live camera preview when WebRTC publisher is absent
+  useEffect(() => {
+    if (!canViewCameras || cameras.length === 0) return;
+    const t = window.setInterval(() => {
+      void refreshPreviews(cameras);
+    }, 4000);
+    return () => window.clearInterval(t);
+  }, [canViewCameras, cameras, refreshPreviews]);
 
   async function requestWhepToken(cameraId: string) {
     try {
@@ -122,7 +200,7 @@ export default function LiveCameraWallPage() {
                   checked={showPolygons}
                   onChange={(e) => setShowPolygons(e.target.checked)}
                 />
-                Table Polygons
+                Show Table Polygons
               </label>
               <label className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium">
                 <input
@@ -130,19 +208,19 @@ export default function LiveCameraWallPage() {
                   checked={showTimers}
                   onChange={(e) => setShowTimers(e.target.checked)}
                 />
-                Dwell Timers
+                Show Dwell Timers
               </label>
               <button
                 type="button"
                 onClick={() => setGridCols((c) => (c === 2 ? 1 : 2))}
                 className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
               >
-                Layout: {gridCols === 2 ? "2×2 Grid" : "Single"}
+                Grid: {gridCols === 2 ? "2×2" : "1×1"}
               </button>
               <button
                 type="button"
                 onClick={() => void loadFeeds()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                 Refresh Feeds
@@ -154,29 +232,25 @@ export default function LiveCameraWallPage() {
         {!authLoading && user && !canViewCameras && (
           <div className="tp-glass flex flex-col items-center gap-3 rounded-xl border p-8 text-center">
             <Lock className="h-8 w-8 text-amber-600" aria-hidden="true" />
-            <h2 className="text-base font-bold">Camera Viewing Restricted</h2>
-            <p className="max-w-md text-sm text-[var(--text-secondary)]">
-              Your role ({user.role}) does not have camera feed access unless explicitly enabled
-              for Hosts on this venue.
+            <h2 className="text-base font-bold">Permission Denied</h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Live camera wall access is disabled for your role in this venue.
             </p>
-            <Link
-              href={`/venues/${venueId}/floor`}
-              className="rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
-            >
-              Return to Live Floor Map
-            </Link>
           </div>
         )}
 
         {error && (
-          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          <div
+            role="alert"
+            className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+          >
             {error}
           </div>
         )}
 
-        {loading && (
+        {canViewCameras && loading && (
           <div className="tp-glass rounded-xl border p-8 text-center text-sm text-[var(--text-secondary)]">
-            Loading anonymized camera snapshots...
+            Connecting to MediaMTX camera feeds...
           </div>
         )}
 
@@ -201,6 +275,20 @@ export default function LiveCameraWallPage() {
               const preview = previews[cam.id];
               const camTables = tables.filter((t) => t.camera_id === cam.id);
               const whepUrl = streamTokens[cam.id];
+              const fallbackNode = preview ? (
+                // Dynamic base64 face-blurred camera frame cannot use static next/image
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`data:image/jpeg;base64,${preview.preview_jpeg_base64}`}
+                  alt={`Face-blurred camera preview for ${cam.name}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-300">
+                  Camera feed unavailable ({cam.status}). Verify RTSP/MediaMTX connectivity.
+                </div>
+              );
+
               return (
                 <article
                   key={cam.id}
@@ -223,18 +311,14 @@ export default function LiveCameraWallPage() {
                   </div>
 
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-slate-900">
-                    {preview ? (
-                      // Dynamic base64 face-blurred camera frame cannot use static next/image
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={`data:image/jpeg;base64,${preview.preview_jpeg_base64}`}
-                        alt={`Face-blurred camera preview for ${cam.name}`}
-                        className="h-full w-full object-cover"
+                    {whepUrl ? (
+                      <WhepVideo
+                        whepUrl={whepUrl}
+                        cameraName={cam.name}
+                        fallback={fallbackNode}
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-300">
-                        Camera feed unavailable ({cam.status}). Verify RTSP/MediaMTX connectivity.
-                      </div>
+                      fallbackNode
                     )}
 
                     {showPolygons && camTables.length > 0 && (
@@ -292,7 +376,7 @@ export default function LiveCameraWallPage() {
 
                   {whepUrl && (
                     <p className="mt-2 truncate font-mono text-[11px] text-[var(--text-secondary)]">
-                      WHEP endpoint ready (short-lived token signed)
+                      WHEP endpoint ready (short-lived token signed; blurred frame relay active)
                     </p>
                   )}
                 </article>

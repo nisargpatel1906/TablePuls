@@ -307,7 +307,7 @@ export function AppShell({
               aria-pressed={solidMode}
               className="hidden sm:inline-flex h-11 px-3 items-center rounded-full hover:bg-[var(--tp-inset-field)] text-xs font-semibold"
             >
-              {solidMode ? "Solid" : "Glass"}
+              {solidMode ? t(locale, "surface.solid") : t(locale, "surface.glass")}
             </button>
             <button
               type="button"
@@ -334,7 +334,7 @@ export function AppShell({
           </div>
         )}
 
-        <main className="flex-1 px-3 lg:px-6 pt-4">{children}</main>
+        <main className="flex-1 px-3 lg:px-6 pt-4 pb-24 lg:pb-6">{children}</main>
       </div>
 
       {/* Mobile / Tablet Bottom Dock (<1024px) */}
@@ -347,21 +347,21 @@ export function AppShell({
           className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
         >
           <Grid2x2 className="h-4 w-4" aria-hidden="true" />
-          <span>Floor</span>
+          <span>{t(locale, "nav.floor")}</span>
         </Link>
         <Link
           href={`/venues/${activeVenueId}/alerts`}
           className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
         >
           <Bell className="h-4 w-4" aria-hidden="true" />
-          <span>Alerts ({activeAlertsCount})</span>
+          <span>{t(locale, "nav.alerts")} ({activeAlertsCount})</span>
         </Link>
         <Link
           href={`/venues/${activeVenueId}/waitlist`}
           className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
         >
           <Clock className="h-4 w-4" aria-hidden="true" />
-          <span>Waitlist</span>
+          <span>{t(locale, "nav.waitlist")}</span>
         </Link>
         <button
           type="button"
@@ -369,7 +369,7 @@ export function AppShell({
           className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
         >
           <Menu className="h-4 w-4" aria-hidden="true" />
-          <span>More</span>
+          <span>{t(locale, "nav.more")}</span>
         </button>
       </nav>
 

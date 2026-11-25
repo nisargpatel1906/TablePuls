@@ -152,6 +152,7 @@ def create_stream_token(
     organization_id: uuid.UUID,
     venue_id: uuid.UUID,
     camera_id: uuid.UUID,
+    action: str = "read",
     ttl_seconds: int = 120,
 ) -> str:
     settings = get_settings()
@@ -161,6 +162,7 @@ def create_stream_token(
         "org_id": str(organization_id),
         "venue_id": str(venue_id),
         "camera_id": str(camera_id),
+        "action": action,
         "token_type": "stream",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),

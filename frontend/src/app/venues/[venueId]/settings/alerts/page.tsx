@@ -81,7 +81,7 @@ export default function AlertRulesSettingsPage() {
         cleaning_alert_delay_sec: rule.cleaning_alert_delay_sec,
         occupancy_debounce_sec: rule.occupancy_debounce_sec,
         departure_debounce_sec: rule.departure_debounce_sec,
-        min_confidence: rule.min_confidence,
+        min_confidence: Math.round(rule.min_confidence * 100) / 100,
         require_bussing_confirmation: rule.require_bussing_confirmation,
         quiet_hours_enabled: rule.quiet_hours_enabled,
       };
@@ -188,21 +188,21 @@ export default function AlertRulesSettingsPage() {
                   {
                     key: "unattended_service_sec" as const,
                     label: "Unattended Service Alert Delay (sec)",
-                    min: 30,
+                    min: 60,
                     max: 1800,
                     step: 10,
                   },
                   {
                     key: "cleaning_alert_delay_sec" as const,
                     label: "Dirty Table / Bussing Delay (sec)",
-                    min: 15,
+                    min: 30,
                     max: 900,
                     step: 5,
                   },
                   {
                     key: "occupancy_debounce_sec" as const,
                     label: "Occupancy Debounce (sec)",
-                    min: 2,
+                    min: 3,
                     max: 60,
                     step: 1,
                   },

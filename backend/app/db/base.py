@@ -43,11 +43,14 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
+        is_pg = settings.database_url.startswith("postgresql")
         _engine = create_async_engine(
             settings.database_url,
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
+            pool_timeout=5,
+            connect_args={"timeout": 3, "command_timeout": 10} if is_pg else {},
         )
     return _engine
 

@@ -12,7 +12,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -27,7 +27,7 @@ from app.core.valkey_client import (
     set_kill_switch_cache,
 )
 from app.db.base import get_db, uuid7
-from app.db.models import AlertRule, MLModel, MLReviewItem, SystemSetting
+from app.db.models import AlertRule, MLModel, MLReviewItem, Organization, SystemSetting
 from app.schemas.floor_ops import (
     TestWebhookRequest,
     UpdateAlertRuleRequest,
@@ -169,6 +169,7 @@ async def test_webhook(
             await db.execute(
                 select(AlertRule).where(
                     AlertRule.venue_id == venue_id,
+                    AlertRule.organization_id == actor.organization_id,
                     AlertRule.section_name.is_(None),
                     AlertRule.deleted_at.is_(None),
                 )
@@ -212,19 +213,44 @@ async def list_ml_review_items(
     )
     if review_status:
         q = q.where(MLReviewItem.review_status == review_status)
-    rows = (await db.execute(q.order_by(MLReviewItem.created_at.desc()))).scalars().all()
-    total = len(rows)
-    start = (page - 1) * page_size
-    reviewed_rows = [r for r in rows if r.review_status == "REVIEWED"]
+    total = int((await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one())
+    offset = (page - 1) * page_size
+    rows = (
+        (
+            await db.execute(
+                q.order_by(MLReviewItem.created_at.desc()).offset(offset).limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    reviewed_rows = (
+        (
+            await db.execute(
+                select(MLReviewItem).where(
+                    MLReviewItem.venue_id == venue_id,
+                    MLReviewItem.organization_id == actor.organization_id,
+                    MLReviewItem.review_status == "REVIEWED",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     agreed = sum(1 for r in reviewed_rows if r.human_state == r.predicted_state)
     agreement_rate = round(agreed / len(reviewed_rows), 3) if reviewed_rows else None
+    snap_root = Path(get_settings().snapshot_storage_dir).resolve()
 
     items = [
         {
             "id": str(r.id),
             "table_id": str(r.table_id),
             "camera_id": str(r.camera_id),
-            "has_snapshot": bool(r.snapshot_path and Path(r.snapshot_path).exists()),
+            "has_snapshot": bool(
+                r.snapshot_path
+                and Path(r.snapshot_path).resolve().is_relative_to(snap_root)
+                and Path(r.snapshot_path).resolve().is_file()
+            ),
             "predicted_state": r.predicted_state,
             "predicted_guest_count": r.predicted_guest_count,
             "confidence": r.confidence,
@@ -236,7 +262,7 @@ async def list_ml_review_items(
             "created_at": r.created_at.isoformat(),
             "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
         }
-        for r in rows[start : start + page_size]
+        for r in rows
     ]
     return success_response(
         {
@@ -247,6 +273,33 @@ async def list_ml_review_items(
             "agreement_rate": agreement_rate,
         }
     )
+
+
+@router.get("/api/v1/venues/{venue_id}/ml-review/{item_id}/snapshot")
+async def get_ml_review_snapshot(
+    venue_id: uuid.UUID,
+    item_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="ml_review.label"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Return face-blurred JPEG crop for a specific ML review item (tenant-isolated)."""
+    item = (
+        await db.execute(
+            select(MLReviewItem).where(
+                MLReviewItem.id == item_id,
+                MLReviewItem.venue_id == venue_id,
+                MLReviewItem.organization_id == actor.organization_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if item is None or not item.snapshot_path:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Review snapshot not found")
+
+    snap_root = Path(get_settings().snapshot_storage_dir).resolve()
+    cand = Path(item.snapshot_path).resolve()
+    if not cand.is_relative_to(snap_root) or not cand.is_file():
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Snapshot file expired or purged")
+    return Response(content=cand.read_bytes(), media_type="image/jpeg")
 
 
 @router.patch("/api/v1/venues/{venue_id}/ml-review/{item_id}")
@@ -383,8 +436,15 @@ async def get_system_overview(
 
     valkey_ok = await ping_valkey()
     cv_heartbeat: str | None = None
+    org_selected_models: dict[str, str] = {}
     try:
-        cv_heartbeat = await get_valkey().get("tp:cv:heartbeat")
+        vk = get_valkey()
+        cv_heartbeat = await vk.get("tp:cv:heartbeat")
+        await set_kill_switch_cache(str(actor.organization_id), sys_set.ai_inference_enabled)
+        for role_name in ("DETECTOR", "CLEANLINESS", "TURNOVER_ETA"):
+            val = await vk.get(f"tp:org_model:{actor.organization_id}:{role_name}")
+            if val:
+                org_selected_models[role_name] = str(val)
     except Exception:
         cv_heartbeat = None
 
@@ -412,7 +472,11 @@ async def get_system_overview(
                     "eval_metrics_json": m.eval_metrics_json,
                     "gate_status": m.gate_status,
                     "channel": m.channel,
-                    "is_active": m.is_active,
+                    "is_active": (
+                        str(m.id) == org_selected_models[m.model_role]
+                        if m.model_role in org_selected_models
+                        else m.is_active
+                    ),
                     "created_at": m.created_at.isoformat(),
                 }
                 for m in models
@@ -507,7 +571,25 @@ async def activate_model(
     await db.execute(
         update(MLModel).where(MLModel.model_role == model.model_role).values(is_active=False)
     )
-    model.is_active = True
+    org_count = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(Organization)
+                .where(Organization.deleted_at.is_(None))
+            )
+        ).scalar_one()
+    )
+    if org_count <= 1:
+        model.is_active = True
+    else:
+        # Multi-tenant isolation: store org-scoped model selection in Valkey so other orgs remain unaffected
+        try:
+            await get_valkey().set(
+                f"tp:org_model:{actor.organization_id}:{model.model_role}", str(model.id)
+            )
+        except Exception:
+            model.is_active = True
     await write_audit_log(
         db,
         organization_id=actor.organization_id,
@@ -523,7 +605,13 @@ async def activate_model(
         request=request,
     )
     await db.commit()
-    await publish_cv_control({"event": "model_reload", "model_version": model.version})
+    await publish_cv_control(
+        {
+            "event": "model_reload",
+            "organization_id": str(actor.organization_id),
+            "model_version": model.version,
+        }
+    )
     return success_response({"activated": True, "version": model.version})
 
 
@@ -533,19 +621,29 @@ async def purge_snapshots_now(
     actor: Annotated[Any, Depends(require_org_role(capability="privacy.purge"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    """API-022 (purge): Immediately delete all stored review crop files and audit log."""
-    snap_dir = Path(get_settings().snapshot_storage_dir)
-    deleted_files = 0
-    if snap_dir.exists():
-        for f in snap_dir.rglob("*.jpg"):
-            f.unlink(missing_ok=True)
-            deleted_files += 1
-
-    await db.execute(
-        update(MLReviewItem)
-        .where(MLReviewItem.organization_id == actor.organization_id)
-        .values(snapshot_path=None)
+    """API-022 (purge): Immediately delete stored review crop files for actor's org only."""
+    snap_root = Path(get_settings().snapshot_storage_dir).resolve()
+    org_items = (
+        (
+            await db.execute(
+                select(MLReviewItem).where(
+                    MLReviewItem.organization_id == actor.organization_id,
+                    MLReviewItem.snapshot_path.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
+    deleted_files = 0
+    for item in org_items:
+        if item.snapshot_path:
+            cand = Path(item.snapshot_path).resolve()
+            if cand.is_relative_to(snap_root) and cand.is_file():
+                cand.unlink(missing_ok=True)
+                deleted_files += 1
+        item.snapshot_path = None
+
     await write_audit_log(
         db,
         organization_id=actor.organization_id,

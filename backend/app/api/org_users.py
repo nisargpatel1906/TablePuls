@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/v1/org", tags=["org-admin"])
 
 def _csv_safe(val: object) -> str:
     s = "" if val is None else str(val)
-    if s.startswith(("=", "+", "-", "@")):
+    if s.startswith(("=", "+", "-", "@", "\t", "\r")):
         return "'" + s
     return s
 
@@ -242,6 +242,34 @@ async def update_org_user(
     if body.role is not None:
         target.role = body.role
     if body.assigned_venue_ids is not None:
+        if body.assigned_venue_ids:
+            valid_venues = set(
+                (
+                    await db.execute(
+                        select(Venue.id).where(
+                            Venue.organization_id == actor.organization_id,
+                            Venue.deleted_at.is_(None),
+                            Venue.id.in_(body.assigned_venue_ids),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if valid_venues != set(body.assigned_venue_ids):
+                raise AppError(
+                    403,
+                    "AUTH_FORBIDDEN",
+                    "One or more assigned venues do not belong to your organization",
+                )
+            if actor.role == Role.MANAGER and not set(body.assigned_venue_ids).issubset(
+                set(actor.assigned_venue_ids or [])
+            ):
+                raise AppError(
+                    403,
+                    "AUTH_FORBIDDEN",
+                    "Managers can only assign venues within their own scope",
+                )
         target.assigned_venue_ids = body.assigned_venue_ids
     if body.full_name is not None:
         target.full_name = body.full_name.strip()
@@ -293,8 +321,12 @@ async def revoke_user_sessions(
     target = res.scalar_one_or_none()
     if target is None:
         raise AppError(404, "RESOURCE_NOT_FOUND", "User not found")
-    if actor.role == Role.MANAGER and target.role in {"OWNER", "MANAGER"}:
-        raise AppError(403, "AUTH_FORBIDDEN", "Managers cannot revoke OWNER or MANAGER sessions")
+    if actor.role == Role.MANAGER:
+        if target.role in {"OWNER", "MANAGER"}:
+            raise AppError(403, "AUTH_FORBIDDEN", "Managers cannot revoke OWNER or MANAGER sessions")
+        mgr_venues = set(actor.assigned_venue_ids or [])
+        if not set(target.assigned_venue_ids or []).intersection(mgr_venues):
+            raise AppError(403, "AUTH_FORBIDDEN", "User outside manager venue scope")
 
     now = datetime.now(UTC)
     await db.execute(

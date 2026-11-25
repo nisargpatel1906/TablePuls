@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import consume_ws_ticket
+from app.api.venues_cameras import _apply_exclusions_and_blur, _read_camera_frame_sync
+from app.config import get_settings
 from app.core.errors import AppError, success_response
 from app.core.rbac import Role, require_venue_role
+from app.core.security import decrypt_field
 from app.core.valkey_client import check_and_store_idempotency
 from app.db.base import get_db, get_session_factory, uuid7
 from app.db.models import (
@@ -181,7 +186,10 @@ async def get_table_detail(
         (
             await db.execute(
                 select(TableStateEvent)
-                .where(TableStateEvent.table_id == table_id)
+                .where(
+                    TableStateEvent.table_id == table_id,
+                    TableStateEvent.organization_id == actor.organization_id,
+                )
                 .order_by(TableStateEvent.occurred_at.desc())
                 .limit(10)
             )
@@ -192,16 +200,25 @@ async def get_table_detail(
     latest_review = (
         await db.execute(
             select(MLReviewItem)
-            .where(MLReviewItem.table_id == table_id, MLReviewItem.snapshot_path.is_not(None))
+            .where(
+                MLReviewItem.table_id == table_id,
+                MLReviewItem.organization_id == actor.organization_id,
+                MLReviewItem.snapshot_path.is_not(None),
+            )
             .order_by(MLReviewItem.created_at.desc())
             .limit(1)
         )
     ).scalar_one_or_none()
+    has_snap = False
+    if latest_review and latest_review.snapshot_path:
+        snap_root = Path(get_settings().snapshot_storage_dir).resolve()
+        cand = Path(latest_review.snapshot_path).resolve()
+        has_snap = cand.is_relative_to(snap_root) and cand.is_file()
 
     return success_response(
         {
             "table": _table_dict(tbl),
-            "latest_snapshot_available": latest_review is not None,
+            "latest_snapshot_available": has_snap,
             "events": [
                 {
                     "id": str(e.id),
@@ -217,6 +234,37 @@ async def get_table_detail(
             ],
         }
     )
+
+
+@router.get("/api/v1/venues/{venue_id}/tables/{table_id}/latest-snapshot")
+async def get_table_latest_snapshot(
+    venue_id: uuid.UUID,
+    table_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="floor.view"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Return latest stored face-blurred JPEG crop for a table."""
+    latest_review = (
+        await db.execute(
+            select(MLReviewItem)
+            .where(
+                MLReviewItem.table_id == table_id,
+                MLReviewItem.venue_id == venue_id,
+                MLReviewItem.organization_id == actor.organization_id,
+                MLReviewItem.snapshot_path.is_not(None),
+            )
+            .order_by(MLReviewItem.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest_review is None or not latest_review.snapshot_path:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "No blurred review snapshot available for table")
+
+    snap_root = Path(get_settings().snapshot_storage_dir).resolve()
+    cand = Path(latest_review.snapshot_path).resolve()
+    if not cand.is_relative_to(snap_root) or not cand.is_file():
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Snapshot file expired or purged")
+    return Response(content=cand.read_bytes(), media_type="image/jpeg")
 
 
 @router.patch("/api/v1/venues/{venue_id}/tables/{table_id}/override")
@@ -316,6 +364,7 @@ async def override_table_state(
             update(Alert)
             .where(
                 Alert.table_id == table_id,
+                Alert.organization_id == actor.organization_id,
                 Alert.status.in_(["ACTIVE", "ACKNOWLEDGED"]),
             )
             .values(status="RESOLVED", resolved_at=now)
@@ -385,12 +434,68 @@ async def flag_table_detection(
     if tbl is None:
         raise AppError(404, "RESOURCE_NOT_FOUND", "Table not found")
 
+    camera_id = tbl.camera_id
+    cam_obj: Camera | None = None
+    if camera_id is None:
+        cam_obj = (
+            await db.execute(
+                select(Camera)
+                .where(
+                    Camera.venue_id == venue_id,
+                    Camera.organization_id == actor.organization_id,
+                    Camera.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if cam_obj is None:
+            raise AppError(
+                400,
+                "VALIDATION_ERROR",
+                "Table has no associated camera to attach AI review feedback",
+            )
+        camera_id = cam_obj.id
+    else:
+        cam_obj = (
+            await db.execute(
+                select(Camera).where(
+                    Camera.id == camera_id,
+                    Camera.organization_id == actor.organization_id,
+                    Camera.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+
+    snap_path: str | None = None
+    settings = get_settings()
+    if settings.review_crops_enabled and cam_obj is not None:
+        try:
+            raw_url = decrypt_field(cam_obj.stream_url_encrypted)
+            ok, frame = await asyncio.to_thread(
+                _read_camera_frame_sync,
+                cam_obj.stream_type,
+                raw_url,
+                settings.demo_video_path,
+            )
+            if ok and frame is not None:
+                blurred_jpeg = await asyncio.to_thread(
+                    _apply_exclusions_and_blur, frame, cam_obj.exclusion_polygons_json
+                )
+                snap_dir = Path(settings.snapshot_storage_dir) / str(actor.organization_id)
+                snap_dir.mkdir(parents=True, exist_ok=True)
+                fpath = snap_dir / f"{uuid7()}.jpg"
+                fpath.write_bytes(blurred_jpeg)
+                snap_path = str(fpath)
+        except Exception:
+            snap_path = None
+
     item = MLReviewItem(
         id=uuid7(),
         organization_id=actor.organization_id,
         venue_id=venue_id,
         table_id=table_id,
-        camera_id=tbl.camera_id or uuid7(),
+        camera_id=camera_id,
+        snapshot_path=snap_path,
         predicted_state=tbl.current_state,
         predicted_guest_count=tbl.current_guest_count,
         confidence=tbl.current_confidence or 0.0,
@@ -434,20 +539,28 @@ async def list_alerts(
     if alert_type:
         q = q.where(Alert.alert_type == alert_type)
 
-    rows = (await db.execute(q.order_by(Alert.created_at.desc()))).scalars().all()
+    total = int((await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one())
+    offset = (page - 1) * page_size
+    rows = (
+        (
+            await db.execute(
+                q.order_by(Alert.created_at.desc()).offset(offset).limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
     tables = (
         await db.execute(
-            select(DiningTable.id, DiningTable.table_code).where(DiningTable.venue_id == venue_id)
+            select(DiningTable.id, DiningTable.table_code).where(
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+            )
         )
     ).all()
     code_map = {tid: code for tid, code in tables}
 
-    total = len(rows)
-    start = (page - 1) * page_size
-    items = [
-        _alert_dict(a, code_map.get(a.table_id) if a.table_id else None)
-        for a in rows[start : start + page_size]
-    ]
+    items = [_alert_dict(a, code_map.get(a.table_id) if a.table_id else None) for a in rows]
     return success_response({"items": items, "total": total, "page": page, "page_size": page_size})
 
 
@@ -508,6 +621,10 @@ async def venue_websocket(
     ticket: Annotated[str, Query(min_length=8)],
 ) -> None:
     """Authenticated venue WebSocket emitting floor.snapshot and incremental live events."""
+    origin = websocket.headers.get("origin")
+    if origin and origin not in get_settings().cors_origins:
+        await websocket.close(code=4403)
+        return
     claims = await consume_ws_ticket(ticket)
     if claims is None:
         await websocket.close(code=4401)

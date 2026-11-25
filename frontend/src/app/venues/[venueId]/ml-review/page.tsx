@@ -18,7 +18,7 @@ interface MLReviewItemDTO {
   predicted_guest_count: number;
   confidence: number;
   trigger_reason: string;
-  review_status: "PENDING" | "REVIEWED" | "SKIPPED" | string;
+  review_status: "PENDING" | "REVIEWED" | "EXCLUDED" | string;
   human_state: string | null;
   human_guest_count: number | null;
   issue_tags: string[];
@@ -42,6 +42,7 @@ export default function MLReviewPage() {
 
   const [items, setItems] = useState<MLReviewItemDTO[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
   const [agreementRate, setAgreementRate] = useState<number | null>(null);
   const [chosenState, setChosenState] = useState<TableState>("OCCUPIED");
   const [guestCount, setGuestCount] = useState<number>(2);
@@ -90,6 +91,28 @@ export default function MLReviewPage() {
       void loadQueue();
     }
   }, [authLoading, user, loadQueue]);
+
+  useEffect(() => {
+    if (!venueId || !selectedItem?.id || !selectedItem.has_snapshot) {
+      setSnapshotUrl(null);
+      return;
+    }
+    let active = true;
+    let objUrl: string | null = null;
+    apiFetch<Blob>(`/api/v1/venues/${venueId}/ml-review/${selectedItem.id}/snapshot`)
+      .then((blob) => {
+        if (!active) return;
+        objUrl = URL.createObjectURL(blob);
+        setSnapshotUrl(objUrl);
+      })
+      .catch(() => {
+        if (active) setSnapshotUrl(null);
+      });
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [venueId, selectedItem?.id, selectedItem?.has_snapshot]);
 
   const submitLabel = useCallback(async () => {
     if (!selectedItem || !canLabel) return;
@@ -282,10 +305,20 @@ export default function MLReviewPage() {
                 </span>
               </div>
 
-              <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-slate-900 p-4 text-center text-xs text-slate-300">
-                {selectedItem.has_snapshot
-                  ? "Face-blurred review crop stored cleanly in encrypted review bucket (ready for ZIP export)."
-                  : "Metadata-only review sample (no image frame persisted)."}
+              <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-slate-900 p-2 text-center text-xs text-slate-300">
+                {snapshotUrl ? (
+                  // Authenticated face-blurred review crop fetched as Blob URL
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={snapshotUrl}
+                    alt={`Face-blurred review crop for ${selectedItem.predicted_state}`}
+                    className="h-full w-full rounded-lg object-contain"
+                  />
+                ) : selectedItem.has_snapshot ? (
+                  "Loading encrypted face-blurred review crop..."
+                ) : (
+                  "Metadata-only review sample (no image frame persisted)."
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
