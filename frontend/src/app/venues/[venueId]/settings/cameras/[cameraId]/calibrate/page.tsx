@@ -52,6 +52,16 @@ function validatePolygonPoints(pts: PolygonPoint[]): string | null {
   return null;
 }
 
+function roundTables(items: CalibrationTable[]): CalibrationTable[] {
+  return items.map((tbl) => ({
+    ...tbl,
+    polygon_json: (tbl.polygon_json || []).map((pt) => ({
+      x: Math.round(pt.x * 1000) / 1000,
+      y: Math.round(pt.y * 1000) / 1000,
+    })),
+  }));
+}
+
 export default function PolygonCalibrationPage() {
   const params = useParams<{ venueId: string; cameraId: string }>();
   const venueId = params?.venueId || "";
@@ -85,15 +95,7 @@ export default function PolygonCalibrationPage() {
         exclusion_polygons_json: PolygonPoint[][];
         tables: CalibrationTable[];
       }>(`/api/v1/venues/${venueId}/cameras/${cameraId}/polygons`);
-      setTables(
-        polyRes.tables.map((tbl) => ({
-          ...tbl,
-          polygon_json: (tbl.polygon_json || []).map((pt) => ({
-            x: Math.round(pt.x * 1000) / 1000,
-            y: Math.round(pt.y * 1000) / 1000,
-          })),
-        })),
-      );
+      setTables(roundTables(polyRes.tables));
       setExclusionZones(polyRes.exclusion_polygons_json || []);
 
       try {
@@ -192,7 +194,7 @@ export default function PolygonCalibrationPage() {
           tables,
         }),
       });
-      setTables(res.tables);
+      setTables(roundTables(res.tables));
       setExclusionZones(res.exclusion_polygons_json);
       setSuccessMsg(`Saved calibration for ${res.tables.length} tables.`);
     } catch (err) {
@@ -439,7 +441,7 @@ export default function PolygonCalibrationPage() {
                           min={0}
                           max={1}
                           aria-label={`Vertex ${vIdx + 1} X`}
-                          value={pt.x}
+                          value={Number.isFinite(pt.x) ? Number(pt.x.toFixed(3)) : 0}
                           onChange={(e) => {
                             const nx = Number(e.target.value);
                             setTables((prev) =>
@@ -463,7 +465,7 @@ export default function PolygonCalibrationPage() {
                           min={0}
                           max={1}
                           aria-label={`Vertex ${vIdx + 1} Y`}
-                          value={pt.y}
+                          value={Number.isFinite(pt.y) ? Number(pt.y.toFixed(3)) : 0}
                           onChange={(e) => {
                             const ny = Number(e.target.value);
                             setTables((prev) =>
