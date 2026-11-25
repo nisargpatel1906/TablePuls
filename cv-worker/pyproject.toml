@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 license = { text = "Apache-2.0" }
 dependencies = [
     "onnxruntime==1.32.0",
-    "opencv-python-headless==5.1.0.95",
+    "opencv-python-headless==4.14.0.94",
     "supervision==0.32.1",
     "numpy==2.5.5",
     "pillow==13.0.0",
@@ -34,8 +34,19 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["cv2", "supervision", "lightgbm", "onnxruntime"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

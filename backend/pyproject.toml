@@ -2,7 +2,6 @@
 name = "tablepulse-backend"
 version = "1.0.0"
 description = "TablePulse FastAPI Backend, Auth/RBAC, Analytics, and Admin CLI"
-readme = "../README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "Apache-2.0" }
 dependencies = [
@@ -12,6 +11,7 @@ dependencies = [
     "alembic==1.20.1",
     "asyncpg==0.32.0",
     "pydantic==2.14.4",
+    "email-validator==2.4.0",
     "pydantic-settings==2.16.3",
     "argon2-cffi==25.1.0",
     "pyjwt==2.15.1",
@@ -25,6 +25,9 @@ dependencies = [
     "zxcvbn==4.5.0",
     "python-multipart==0.0.34",
     "pyyaml==6.0.4",
+    "opencv-python-headless==4.14.0.94",
+    "numpy==2.5.5",
+    "pillow==13.0.0",
 ]
 
 [project.optional-dependencies]
@@ -43,12 +46,19 @@ dev = [
 [project.scripts]
 tablepulse = "app.cli:app"
 
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -56,6 +66,11 @@ strict = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = ["zxcvbn", "cv2"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

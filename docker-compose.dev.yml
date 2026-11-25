@@ -1,0 +1,9 @@
+# Development port bindings for running local backend/frontend/pytest against containerized DB & Valkey.
+# Production docker-compose.yml keeps db and valkey isolated on the internal network.
+services:
+  db:
+    ports:
+      - "5432:5432"
+  valkey:
+    ports:
+      - "6379:6379"

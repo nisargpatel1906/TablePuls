@@ -1,0 +1,9 @@
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+minimumReleaseAgeExclude:
+  - '@axe-core/playwright@4.14.1'
+  - lucide-react@1.80.0
+allowBuilds:
+  esbuild: true
+  sharp: true

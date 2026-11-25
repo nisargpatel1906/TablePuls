@@ -40,7 +40,7 @@
 
 ### CV Worker & ML (`cv-worker/pyproject.toml`, `ml/pyproject.toml`)
 - `onnxruntime==1.32.0` (MIT)
-- `opencv-python-headless==5.1.0.95` (Apache-2.0)
+- `opencv-python-headless==4.14.0.94` (Apache-2.0, latest OpenCV 4.x with full `CascadeClassifier` / `objdetect` support)
 - `supervision==0.32.1` (MIT)
 - `numpy==2.5.5` (BSD-3-Clause)
 - `pillow==13.0.0` (MIT-CMU)

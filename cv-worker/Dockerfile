@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /usr/local/bin/uv
 
 COPY cv-worker/pyproject.toml cv-worker/uv.lock* /app/cv-worker/
+COPY infra/cascades /app/infra/cascades
 
 WORKDIR /app/cv-worker
 RUN uv sync --no-dev --frozen || uv sync --no-dev

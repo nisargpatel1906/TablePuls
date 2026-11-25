@@ -14,6 +14,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /usr/local/bin/uv
 
 COPY backend/pyproject.toml backend/uv.lock* /app/backend/
 COPY packages /app/packages
+COPY infra/cascades /app/infra/cascades
 
 WORKDIR /app/backend
 RUN uv sync --no-dev --frozen || uv sync --no-dev
