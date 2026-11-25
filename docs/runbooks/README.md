@@ -1,0 +1,9 @@
+# Incident & Operational Runbooks Index
+
+1. **Camera Offline (`CAMERA_OFFLINE` -> Table `UNKNOWN`)**: Check RTSP URL & credentials on `SCR-012`, test network reachability from MediaMTX/CV host, confirm H.264/H.265 codec and `>= 640x480` resolution. Table states automatically transition safely to `UNKNOWN` after `camera_stale_s=30`.
+2. **CV Worker Crashloop / Model Load Failure**: Verify `AI_INFERENCE_ENABLED`, confirm ONNX artifact path / SHA-256, check Valkey stream `tp:cv:events` consumer lag, and if needed engage the OWNER AI Kill Switch on `/org/system` (`PATCH /api/v1/org/system` `{ "ai_inference_enabled": false }`) so floor operations run cleanly in manual mode.
+3. **PostgreSQL Down / Failover**: Verify PG16 health (`pg_isready`), check connection pool saturation, and restore from `pg_dump` custom archive using `scripts/restore_test.py` procedure.
+4. **Valkey Down**: Auth login rate limits fail closed cleanly; frontend WebSockets automatically drop back after 3 failures to 5-second HTTP polling of `/api/v1/venues/{v}/floor-state`. Restart Valkey and verify pub/sub delivery recovers.
+5. **Webhook Circuit Breaker Open**: 5 consecutive failed deliveries pause downstream webhook dispatch; inspect destination HTTPS endpoint and test manually with `Send Test Webhook` (`SCR-014`).
+6. **Security Incident / Credential Compromise**: Revoke sessions immediately (`POST /api/v1/org/users/{id}/revoke-sessions`), rotate `TABLEPULSE_JWT_SECRET` and `TABLEPULSE_DATA_ENCRYPTION_KEY`, inspect immutable `audit_logs`, and run `POST /api/v1/org/system/purge-snapshots` if crop purge is required.
+7. **Model / Release Rollback**: On `/org/system` (`SCR-016`), activate previous known-good model (`POST /api/v1/org/system/models/{id}/activate`) or revert release tag (`git checkout <tag>` + `alembic downgrade -1` after DB backup).

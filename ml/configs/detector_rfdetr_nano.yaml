@@ -1,0 +1,12 @@
+rfdetr_variant: nano
+license: Apache-2.0
+input_size: 560
+seed: 42
+epochs: 50
+batch_size: 16
+learning_rate: 0.0001
+onnx_opset: 17
+channel: experimental
+notes: >
+  Apache-2.0 RF-DETR Nano baseline configuration. Restricted variants
+  (Atto/Femto/Pico/XL/2XL under Roboflow PML 1.0) are strictly prohibited.

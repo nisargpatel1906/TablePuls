@@ -26,6 +26,8 @@ out/
 dist/
 build/
 .pnpm-store/
+next-env.d.ts
+*.tsbuildinfo
 
 # Runtime Data, Snapshots, Weights & Datasets (NEVER commit)
 data/snapshots/

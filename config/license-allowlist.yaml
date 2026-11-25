@@ -22,6 +22,10 @@ allowed_spdx_substrings:
   - "Zlib"
   - "LGPL-2.1" # dynamically linked system libs only
   - "LGPL-3.0" # dynamically linked system libs only
+  - "BSD" # exact BSD classifier string emitted by torchvision
+  - "BlueOak-1.0.0" # permissive OSI/BlueOak transitive npm build tools (graceful-fs, minimatch)
+  - "Python-2.0" # OSI-approved PSF license (argparse npm)
+  - "CC-BY-4.0" # permissive attribution data (caniuse-lite browserlist data)
 
 banned_license_substrings:
   - "AGPL"

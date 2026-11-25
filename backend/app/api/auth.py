@@ -210,7 +210,9 @@ async def login(
         )
 
     acct_fail_key = f"login:fail:{email_norm}"
-    acct_ok, acct_retry = await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True)
+    acct_ok, acct_retry = await check_rate_limit(
+        acct_fail_key, 5, 900, fail_closed=True, increment=False
+    )
     if not acct_ok:
         raise AppError(
             429,
@@ -222,11 +224,13 @@ async def login(
     res = await db.execute(select(User).where(User.email == email_norm))
     user = res.scalar_one_or_none()
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+        await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True, increment=True)
         raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid email or password")
 
     if user.totp_enabled and user.totp_secret_encrypted:
         secret_b32 = decrypt_field(user.totp_secret_encrypted)
         if not body.totp_code or not verify_totp(secret_b32, body.totp_code):
+            await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True, increment=True)
             raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authentication code")
 
     raw_refresh, hash_refresh = generate_opaque_token()

@@ -3,7 +3,14 @@
 > **Quick reference**
 > - **What:** Open-source (**Apache-2.0**), self-hostable **AI restaurant floor-operations platform**. Connects existing CCTV/RTSP cameras via **MediaMTX** (WebRTC live view, audio stripped) and a **CV Worker** (RF-DETR Apache-2.0 + ByteTrack + Cleanliness Classifier) to provide live table states, guest counts, dwell/service timers, unattended-table & bussing alerts, waitlist turnover ETAs, and peak-hour staffing analytics.
 > - **Designed for autonomous coding agents:** Combines lean, buildable v1.0 scope (**15 tables · 16 screens · 23 API groups · 9 build stages**) with strict open-source license hygiene, OWASP ASVS L2 security/privacy, reliability matrices, and publication-grade ML evaluation (`TSM-F1`).
-> - **Honest ML status:** Target is `>= 90%` (stretch `95%`) on **TSM-F1** on a frozen held-out-venue test set — a *target to be measured*, **not achieved or guaranteed**. Status today: **NOT YET MEASURED** (`docs/07-ml-spec-and-evaluation.md`).
+> - **Honest ML status:** Target is `>= 90%` (stretch `95%`) on **TSM-F1** on a frozen held-out-venue test set — a *target to be measured*, **not achieved or guaranteed**. Status today: **NOT YET MEASURED** (`docs/07-ml-spec-and-evaluation.md`). The repository ships the zero-shot baseline strictly as **`experimental`** (`tablepulse-detector-b1@0.1.0`); achieving the 90%–95% production gate requires real labelled multi-venue CCTV footage & GPU fine-tuning supplied by the deploying operator.
+> - **Quickstart (Docker Demo Stack):**
+>   ```bash
+>   cp .env.example .env
+>   docker compose --profile demo up -d --build
+>   # Open http://localhost:3000 (use "Sign in as Demo Manager" when DEMO_MODE=true)
+>   ```
+> - **Checks:** `make check` (`scripts/dev.ps1 check`), `make eval` (`scripts/dev.ps1 eval`), `make smoke` (`scripts/dev.ps1 smoke`), `make restore-test` (`scripts/dev.ps1 restore-test`).
 > - **Labels used everywhere:** `DECIDED` · `PROPOSED` · `OPEN` · `PROFESSIONAL REVIEW` · `DEFERRED`.
 
 ## 1. Document Index (Single Source of Truth)

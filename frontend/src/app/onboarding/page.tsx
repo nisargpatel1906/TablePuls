@@ -323,7 +323,7 @@ export default function OnboardingWizardPage() {
                   <ShieldCheck className="h-5 w-5" aria-hidden="true" />
                   Privacy Face Blur (ON by default, audio stripped)
                 </div>
-                <span className="rounded-full bg-[#34C759] text-white px-2.5 py-0.5 text-xs font-bold">
+                <span className="rounded-full bg-emerald-700 text-white px-2.5 py-0.5 text-xs font-bold">
                   ON
                 </span>
               </div>
@@ -504,7 +504,7 @@ export default function OnboardingWizardPage() {
                   type="button"
                   disabled={busy}
                   onClick={handleLaunch}
-                  className="min-h-[44px] rounded-full bg-[#34C759] px-6 text-sm font-semibold text-white"
+                  className="min-h-[44px] rounded-full bg-emerald-700 px-6 text-sm font-semibold text-white"
                 >
                   {busy ? "Launching..." : "Launch Live Floor"}
                 </button>

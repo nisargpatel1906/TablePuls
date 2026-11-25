@@ -110,9 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setSession = useCallback(
     async (token: string, nextUser: AuthUser) => {
       setAccessToken(token);
-      setUser(nextUser);
       setBootstrapRequired(false);
       await refreshSessionData();
+      setUser((prev) => prev ?? nextUser);
     },
     [refreshSessionData],
   );

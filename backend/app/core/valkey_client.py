@@ -47,6 +47,7 @@ async def check_rate_limit(
     window_seconds: int,
     *,
     fail_closed: bool = False,
+    increment: bool = True,
 ) -> tuple[bool, int]:
     """
     Sliding-window counter.
@@ -57,10 +58,14 @@ async def check_rate_limit(
     bucket_key = f"tp:rl:{key}:{now // window_seconds}"
     try:
         client = get_valkey()
-        count = await client.incr(bucket_key)
-        if count == 1:
-            await client.expire(bucket_key, window_seconds + 1)
-        if int(count) > limit:
+        if increment:
+            count = await client.incr(bucket_key)
+            if count == 1:
+                await client.expire(bucket_key, window_seconds + 1)
+        else:
+            raw = await client.get(bucket_key)
+            count = int(raw) if raw is not None else 0
+        if (int(count) > limit) if increment else (int(count) >= limit):
             ttl = await client.ttl(bucket_key)
             return False, max(1, int(ttl) if ttl and ttl > 0 else window_seconds)
         return True, 0
@@ -75,7 +80,8 @@ async def check_rate_limit(
             _local_rate_limits[key] = history
             retry = max(1, int(window_seconds - (now_f - history[0])))
             return False, retry
-        history.append(now_f)
+        if increment:
+            history.append(now_f)
         _local_rate_limits[key] = history
         return True, 0
 

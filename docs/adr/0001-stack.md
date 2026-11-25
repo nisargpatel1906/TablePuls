@@ -53,11 +53,11 @@
 - `next==15.5.29` (MIT, latest stable Next.js 15 backport release)
 - `react==19.3.1`, `react-dom==19.3.1` (MIT)
 - `@tanstack/react-query==5.108.4` (MIT)
-- `konva==10.11.0`, `react-konva==19.3.2` (MIT)
+- `konva==10.11.0`, `react-konva==19.2.7` (MIT; matches Next.js 15 internal React runtime)
 - `recharts==3.11.1` (MIT)
 - `lucide-react==1.80.0` (ISC)
 - `tailwindcss==4.3.5` (MIT)
-- `typescript==5.8.3` (Apache-2.0, compatible with Next 15 & `eslint-config-next`)
+- `typescript==5.8.3` (Apache-2.0), `eslint==9.39.5` (MIT, compatible with `eslint-config-next@15.5.29`)
 - `vitest==5.1.1`, `@testing-library/react==16.3.3`, `@playwright/test==1.65.1`, `@axe-core/playwright==4.14.1`
 
 ## Explicit License Exclusions

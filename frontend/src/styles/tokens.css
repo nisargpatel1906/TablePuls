@@ -7,8 +7,17 @@
   --tp-label-secondary: #636366;
   --tp-separator: rgba(60, 60, 67, 0.12);
   --tp-card-border: rgba(60, 60, 67, 0.086);
-  --tp-accent: #007aff;
+  /* Accessible WCAG 2.1 AA blue (> 5.5:1 contrast with #FFFFFF button text) */
+  --tp-accent: #0062cc;
   --tp-accent-text: #0055b8;
+
+  /* Component aliases */
+  --bg-canvas: var(--tp-canvas);
+  --surface-solid: var(--tp-surface);
+  --text-primary: var(--tp-label-primary);
+  --text-secondary: var(--tp-label-secondary);
+  --border-subtle: var(--tp-card-border);
+  --accent-primary: var(--tp-accent);
 
   /* Control layer (liquid glass) */
   --tp-glass-bg: rgba(255, 255, 255, 0.72);
@@ -63,8 +72,8 @@ html.dark {
   --tp-label-secondary: #aeaeb2;
   --tp-separator: rgba(255, 255, 255, 0.12);
   --tp-card-border: rgba(255, 255, 255, 0.09);
-  --tp-accent: #0a84ff;
-  --tp-accent-text: #409cff;
+  --tp-accent: #0062cc;
+  --tp-accent-text: #64b5ff;
 
   --tp-glass-bg: rgba(28, 28, 30, 0.74);
   --tp-glass-pill: rgba(36, 36, 38, 0.78);

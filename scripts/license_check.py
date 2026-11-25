@@ -112,9 +112,17 @@ def check_source_prohibitions(root: Path, allowlist: dict[str, list[str]]) -> li
     return errors
 
 
+def _read_json_any_encoding(path: Path) -> object:
+    raw = path.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return json.loads(raw.decode("utf-16"))
+    return json.loads(raw.decode("utf-8-sig"))
+
+
 def check_pip_licenses_json(report_path: Path, allowlist: dict[str, list[str]]) -> list[str]:
     errors: list[str] = []
-    data = json.loads(report_path.read_text(encoding="utf-8"))
+    data = _read_json_any_encoding(report_path)
+    assert isinstance(data, list)
     allowed = [s.lower() for s in allowlist.get("allowed_spdx_substrings", [])]
     banned = [s.lower() for s in allowlist.get("banned_license_substrings", [])]
     banned_pkgs = {p.lower().replace("_", "-") for p in allowlist.get("banned_packages", [])}
@@ -140,20 +148,33 @@ def check_pip_licenses_json(report_path: Path, allowlist: dict[str, list[str]]) 
 
 def check_npm_licenses_json(report_path: Path, allowlist: dict[str, list[str]]) -> list[str]:
     errors: list[str] = []
-    data = json.loads(report_path.read_text(encoding="utf-8"))
+    data = _read_json_any_encoding(report_path)
+    assert isinstance(data, dict)
     allowed = [s.lower() for s in allowlist.get("allowed_spdx_substrings", [])]
     banned = [s.lower() for s in allowlist.get("banned_license_substrings", [])]
 
-    for pkg_id, meta in data.items():
-        lic = str(meta.get("licenses", ""))
-        lic_l = lic.lower()
-        for b in banned:
-            if b in lic_l and not ("lgpl" in lic_l and "gpl" in b):
-                errors.append(f"Banned license '{lic}' on npm package '{pkg_id}'")
-                break
+    for key, meta in data.items():
+        if isinstance(meta, list):
+            # pnpm licenses list --json groups packages under each license key
+            lic_l = str(key).lower()
+            pkg_names = ", ".join(str(x.get("name", "?")) for x in meta[:5])
+            for b in banned:
+                if b in lic_l and not ("lgpl" in lic_l and "gpl" in b):
+                    errors.append(f"Banned license '{key}' on npm packages: {pkg_names}")
+                    break
+            else:
+                if lic_l and not any(a in lic_l for a in allowed):
+                    errors.append(f"Unapproved license '{key}' on npm packages: {pkg_names}")
         else:
-            if lic_l and not any(a in lic_l for a in allowed):
-                errors.append(f"Unapproved license '{lic}' on npm package '{pkg_id}'")
+            lic = str(meta.get("licenses", ""))
+            lic_l = lic.lower()
+            for b in banned:
+                if b in lic_l and not ("lgpl" in lic_l and "gpl" in b):
+                    errors.append(f"Banned license '{lic}' on npm package '{key}'")
+                    break
+            else:
+                if lic_l and not any(a in lic_l for a in allowed):
+                    errors.append(f"Unapproved license '{lic}' on npm package '{key}'")
     return errors
 
 

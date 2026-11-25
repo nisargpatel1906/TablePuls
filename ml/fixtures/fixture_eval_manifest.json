@@ -1,0 +1,110 @@
+{
+  "dataset_version": "tablepulse-fixture-v1",
+  "dataset_flag": "FIXTURE-NOT-FOR-REPORTING",
+  "clips": [
+    {
+      "clip_id": "clip-01",
+      "venue_id": "venue-a",
+      "camera_id": "cam-1",
+      "session_id": "sess-01",
+      "timestamp_epoch": 1700000000,
+      "lighting": "bright",
+      "frame_hash": "hash00000001",
+      "labels": [
+        {"table_id": "T1", "state": "FREE", "guest_count": 0, "pred_state": "FREE", "pred_guest_count": 0, "pred_probs": {"FREE": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T2", "state": "OCCUPIED", "guest_count": 2, "pred_state": "OCCUPIED", "pred_guest_count": 2, "pred_probs": {"OCCUPIED": 0.95}, "latency_sec": 0.5}
+      ]
+    },
+    {
+      "clip_id": "clip-02",
+      "venue_id": "venue-a",
+      "camera_id": "cam-1",
+      "session_id": "sess-02",
+      "timestamp_epoch": 1700001000,
+      "lighting": "dim",
+      "frame_hash": "hash00000002",
+      "labels": [
+        {"table_id": "T1", "state": "NEEDS_CLEANING", "guest_count": 0, "pred_state": "NEEDS_CLEANING", "pred_guest_count": 0, "pred_probs": {"NEEDS_CLEANING": 0.96}, "latency_sec": 0.6},
+        {"table_id": "T2", "state": "NEEDS_SERVICE", "guest_count": 3, "pred_state": "NEEDS_SERVICE", "pred_guest_count": 3, "pred_probs": {"NEEDS_SERVICE": 0.95}, "latency_sec": 0.7}
+      ]
+    },
+    {
+      "clip_id": "clip-03",
+      "venue_id": "venue-b",
+      "camera_id": "cam-2",
+      "session_id": "sess-03",
+      "timestamp_epoch": 1700002000,
+      "lighting": "bright",
+      "frame_hash": "hash00000003",
+      "labels": [
+        {"table_id": "T3", "state": "FREE", "guest_count": 0, "pred_state": "FREE", "pred_guest_count": 0, "pred_probs": {"FREE": 0.96}, "latency_sec": 0.5},
+        {"table_id": "T4", "state": "OCCUPIED", "guest_count": 4, "pred_state": "OCCUPIED", "pred_guest_count": 4, "pred_probs": {"OCCUPIED": 0.95}, "latency_sec": 0.6}
+      ]
+    },
+    {
+      "clip_id": "clip-04",
+      "venue_id": "venue-b",
+      "camera_id": "cam-2",
+      "session_id": "sess-04",
+      "timestamp_epoch": 1700003000,
+      "lighting": "dim",
+      "frame_hash": "hash00000004",
+      "labels": [
+        {"table_id": "T3", "state": "NEEDS_CLEANING", "guest_count": 0, "pred_state": "NEEDS_CLEANING", "pred_guest_count": 0, "pred_probs": {"NEEDS_CLEANING": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T4", "state": "NEEDS_SERVICE", "guest_count": 2, "pred_state": "NEEDS_SERVICE", "pred_guest_count": 2, "pred_probs": {"NEEDS_SERVICE": 0.95}, "latency_sec": 0.5}
+      ]
+    },
+    {
+      "clip_id": "clip-05",
+      "venue_id": "venue-c",
+      "camera_id": "cam-3",
+      "session_id": "sess-05",
+      "timestamp_epoch": 1700004000,
+      "lighting": "bright",
+      "frame_hash": "hash00000005",
+      "labels": [
+        {"table_id": "T5", "state": "FREE", "guest_count": 0, "pred_state": "FREE", "pred_guest_count": 0, "pred_probs": {"FREE": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T6", "state": "OCCUPIED", "guest_count": 2, "pred_state": "OCCUPIED", "pred_guest_count": 2, "pred_probs": {"OCCUPIED": 0.95}, "latency_sec": 0.5}
+      ]
+    },
+    {
+      "clip_id": "clip-06",
+      "venue_id": "venue-c",
+      "camera_id": "cam-3",
+      "session_id": "sess-06",
+      "timestamp_epoch": 1700005000,
+      "lighting": "dim",
+      "frame_hash": "hash00000006",
+      "labels": [
+        {"table_id": "T5", "state": "NEEDS_CLEANING", "guest_count": 0, "pred_state": "NEEDS_CLEANING", "pred_guest_count": 0, "pred_probs": {"NEEDS_CLEANING": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T6", "state": "NEEDS_SERVICE", "guest_count": 3, "pred_state": "NEEDS_SERVICE", "pred_guest_count": 3, "pred_probs": {"NEEDS_SERVICE": 0.95}, "latency_sec": 0.5}
+      ]
+    },
+    {
+      "clip_id": "clip-07",
+      "venue_id": "venue-d",
+      "camera_id": "cam-4",
+      "session_id": "sess-07",
+      "timestamp_epoch": 1700006000,
+      "lighting": "bright",
+      "frame_hash": "hash00000007",
+      "labels": [
+        {"table_id": "T7", "state": "FREE", "guest_count": 0, "pred_state": "FREE", "pred_guest_count": 0, "pred_probs": {"FREE": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T8", "state": "OCCUPIED", "guest_count": 2, "pred_state": "OCCUPIED", "pred_guest_count": 2, "pred_probs": {"OCCUPIED": 0.95}, "latency_sec": 0.5}
+      ]
+    },
+    {
+      "clip_id": "clip-08",
+      "venue_id": "venue-d",
+      "camera_id": "cam-4",
+      "session_id": "sess-08",
+      "timestamp_epoch": 1700007000,
+      "lighting": "dim",
+      "frame_hash": "hash00000008",
+      "labels": [
+        {"table_id": "T7", "state": "NEEDS_CLEANING", "guest_count": 0, "pred_state": "NEEDS_CLEANING", "pred_guest_count": 0, "pred_probs": {"NEEDS_CLEANING": 0.96}, "latency_sec": 0.4},
+        {"table_id": "T8", "state": "NEEDS_SERVICE", "guest_count": 3, "pred_state": "NEEDS_SERVICE", "pred_guest_count": 3, "pred_probs": {"NEEDS_SERVICE": 0.95}, "latency_sec": 0.5}
+      ]
+    }
+  ]
+}

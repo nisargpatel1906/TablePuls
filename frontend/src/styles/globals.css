@@ -32,6 +32,11 @@
   box-shadow: var(--tp-glass-shadow);
 }
 
+.tp-pill {
+  background: var(--tp-glass-pill);
+  border-color: var(--tp-glass-border);
+}
+
 .tp-card {
   background: var(--tp-surface);
   border: 1px solid var(--tp-card-border);
