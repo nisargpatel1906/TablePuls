@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -47,6 +47,14 @@ export default function LiveFloorPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const inspectorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedTableId) return;
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedTableId]);
 
   useEffect(() => {
     const t = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -279,11 +287,11 @@ export default function LiveFloorPage() {
 
         {snapshot && snapshot.tables.length > 0 && (
           <div
-            className={`grid grid-cols-1 gap-4 ${
-              selectedTableId ? "xl:grid-cols-[1fr_390px]" : ""
+            className={`grid grid-cols-1 gap-4 items-start ${
+              selectedTableId ? "lg:grid-cols-[1fr_360px]" : ""
             }`}
           >
-            <div className="flex flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3">
               {viewMode === "canvas" ? (
                 <FloorCanvas
                   tables={filteredTables}
@@ -360,12 +368,17 @@ export default function LiveFloorPage() {
             </div>
 
             {selectedTableId && venueId && (
-              <TableDetailDrawer
-                venueId={venueId}
-                tableId={selectedTableId}
-                onClose={() => setSelectedTableId(null)}
-                onUpdated={() => void refresh()}
-              />
+              <div
+                ref={inspectorRef}
+                className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-100px)] lg:overflow-y-auto"
+              >
+                <TableDetailDrawer
+                  venueId={venueId}
+                  tableId={selectedTableId}
+                  onClose={() => setSelectedTableId(null)}
+                  onUpdated={() => void refresh()}
+                />
+              </div>
             )}
           </div>
         )}

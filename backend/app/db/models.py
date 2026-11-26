@@ -140,7 +140,7 @@ class Camera(Base):
     __tablename__ = "cameras"
     __table_args__ = (
         CheckConstraint(
-            "stream_type IN ('RTSP','RTSPS','DEMO_MP4')",
+            "stream_type IN ('RTSP','RTSPS','HLS','HTTP_MJPEG','RTMP','DEMO_MP4')",
             name="ck_cameras_stream_type",
         ),
         CheckConstraint("target_fps BETWEEN 1 AND 5", name="ck_cameras_target_fps"),

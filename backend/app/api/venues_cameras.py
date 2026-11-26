@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import time
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,8 +15,8 @@ from urllib.parse import parse_qs
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +31,7 @@ from app.core.security import (
     encrypt_field,
     verify_stream_token,
 )
-from app.core.ssrf import mask_stream_url, validate_rtsp_url
+from app.core.ssrf import mask_stream_url, validate_camera_stream_url
 from app.core.valkey_client import publish_cv_control, set_kill_switch_cache
 from app.db.base import get_db, uuid7
 from app.db.models import AlertRule, Camera, DiningTable, SystemSetting, Venue
@@ -61,7 +63,11 @@ def _venue_dict(v: Venue) -> dict[str, Any]:
 
 def _camera_dict(c: Camera, table_count: int = 0) -> dict[str, Any]:
     raw_url = decrypt_field(c.stream_url_encrypted)
-    masked = mask_stream_url(raw_url) if c.stream_type in {"RTSP", "RTSPS"} else raw_url
+    masked = (
+        mask_stream_url(raw_url)
+        if c.stream_type in {"RTSP", "RTSPS", "HLS", "HTTP_MJPEG", "RTMP"}
+        else raw_url
+    )
     return {
         "id": str(c.id),
         "venue_id": str(c.venue_id),
@@ -243,10 +249,10 @@ async def create_camera(
     actor: Annotated[Any, Depends(require_venue_role(capability="cameras.manage"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    """API-008 (create): Add RTSP/RTSPS or DEMO_MP4 camera with AES-256-GCM encryption."""
+    """API-008 (create): Add RTSP/RTSPS/HLS/HTTP_MJPEG/RTMP or DEMO_MP4 camera with AES-256-GCM encryption."""
     settings = get_settings()
-    if body.stream_type in {"RTSP", "RTSPS"}:
-        stream_url = validate_rtsp_url(body.stream_url)
+    if body.stream_type != "DEMO_MP4":
+        stream_url = validate_camera_stream_url(body.stream_url, body.stream_type)
     else:
         if not settings.demo_mode:
             raise AppError(400, "VALIDATION_ERROR", "DEMO_MP4 cameras require DEMO_MODE=true")
@@ -328,12 +334,12 @@ async def update_camera(
         cam.stream_type = body.stream_type
     if body.stream_url is not None:
         url = (
-            validate_rtsp_url(body.stream_url)
-            if cam.stream_type in {"RTSP", "RTSPS"}
+            validate_camera_stream_url(body.stream_url, cam.stream_type)
+            if cam.stream_type != "DEMO_MP4"
             else body.stream_url.strip()
         )
         cam.stream_url_encrypted = encrypt_field(url)
-    elif prev_type in {"RTSP", "RTSPS"} and cam.stream_type == "DEMO_MP4":
+    elif prev_type != "DEMO_MP4" and cam.stream_type == "DEMO_MP4":
         # Prevent unmasked RTSP credential URL exposure after switching to DEMO_MP4
         cam.stream_url_encrypted = encrypt_field("demo://sample_floor.mp4")
     if body.username is not None or body.password is not None:
@@ -456,7 +462,7 @@ async def _capture_camera_preview(
 ) -> JSONResponse:
     raw_url = decrypt_field(cam.stream_url_encrypted)
     if cam.stream_type != "DEMO_MP4":
-        validate_rtsp_url(raw_url)
+        validate_camera_stream_url(raw_url, cam.stream_type)
 
     ok, frame = await asyncio.to_thread(
         _read_camera_frame_sync,
@@ -827,7 +833,119 @@ async def issue_stream_token(
             "token": token,
             "expires_in": 120,
             "whep_url": f"{get_settings().mediamtx_webrtc_public_url.rstrip('/')}/cam-{camera_id}/whep?token={token}",
+            "mjpeg_url": f"/api/v1/venues/{venue_id}/cameras/{camera_id}/live-mjpeg?token={token}",
         }
+    )
+
+
+def _open_capture_sync(stream_type: str, raw_url: str, demo_path: str) -> cv2.VideoCapture | None:
+    if stream_type == "DEMO_MP4":
+        if Path(demo_path).exists():
+            return cv2.VideoCapture(demo_path)
+        return None
+    cap = cv2.VideoCapture(raw_url)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return cap
+
+
+async def _mjpeg_frame_generator(
+    request: Request,
+    stream_type: str,
+    raw_url: str,
+    exclusion_zones: list[Any] | None,
+    fps: int,
+    demo_path: str,
+) -> AsyncIterator[bytes]:
+    interval = 1.0 / max(1, min(60, fps))
+    cap: cv2.VideoCapture | None = None
+    try:
+        cap = await asyncio.to_thread(_open_capture_sync, stream_type, raw_url, demo_path)
+        frame_idx = 0
+        while not await request.is_disconnected():
+            t0 = time.monotonic()
+            frame: Any = None
+            if cap is not None and cap.isOpened():
+                ok, frame = await asyncio.to_thread(cap.read)
+                if not ok or frame is None:
+                    if stream_type == "DEMO_MP4":
+                        await asyncio.to_thread(cap.set, cv2.CAP_PROP_POS_FRAMES, 0)
+                        ok, frame = await asyncio.to_thread(cap.read)
+                    if not ok or frame is None:
+                        break
+            elif stream_type == "DEMO_MP4":
+                frame = generate_demo_floor_frame(1280, 720)
+            else:
+                break
+
+            frame_idx += 1
+            try:
+                blurred = await asyncio.to_thread(
+                    _apply_exclusions_and_blur, frame, exclusion_zones
+                )
+            except FaceBlurError:
+                # Privacy rule: drop unblurred frames
+                continue
+
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                + f"Content-Length: {len(blurred)}\r\n\r\n".encode("ascii")
+                + blurred
+                + b"\r\n"
+            )
+            elapsed = time.monotonic() - t0
+            await asyncio.sleep(max(0.005, interval - elapsed))
+    finally:
+        if cap is not None:
+            await asyncio.to_thread(cap.release)
+
+
+@router.get("/api/v1/venues/{venue_id}/cameras/{camera_id}/live-mjpeg")
+async def stream_live_mjpeg(
+    venue_id: uuid.UUID,
+    camera_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: str = Query(...),
+    fps: int = Query(default=24, ge=1, le=60),
+) -> StreamingResponse:
+    """High-FPS (up to 60 FPS) face-blurred MJPEG live stream authorized via short-lived stream token."""
+    claims = verify_stream_token(token)
+    if str(claims.get("camera_id")) != str(camera_id) or str(claims.get("venue_id")) != str(venue_id):
+        raise AppError(403, "AUTH_FORBIDDEN", "Stream token does not match requested camera")
+
+    cam = (
+        await db.execute(
+            select(Camera).where(
+                Camera.id == camera_id,
+                Camera.venue_id == venue_id,
+                Camera.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if cam is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Camera not found")
+
+    raw_url = decrypt_field(cam.stream_url_encrypted)
+    stream_type = cam.stream_type
+    exclusion_zones = cam.exclusion_polygons_json
+    await db.close()
+    if stream_type != "DEMO_MP4":
+        validate_camera_stream_url(raw_url, stream_type)
+
+    return StreamingResponse(
+        _mjpeg_frame_generator(
+            request=request,
+            stream_type=stream_type,
+            raw_url=raw_url,
+            exclusion_zones=exclusion_zones,
+            fps=fps,
+            demo_path=get_settings().demo_video_path,
+        ),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store"},
     )
 
 

@@ -25,7 +25,9 @@ export default function CameraSettingsPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [camName, setCamName] = useState("");
-  const [streamType, setStreamType] = useState<"RTSP" | "RTSPS" | "DEMO_MP4">("RTSP");
+  const [streamType, setStreamType] = useState<
+    "RTSP" | "RTSPS" | "HLS" | "HTTP_MJPEG" | "RTMP" | "DEMO_MP4"
+  >("RTSP");
   const [streamUrl, setStreamUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -199,12 +201,23 @@ export default function CameraSettingsPage() {
               <select
                 value={streamType}
                 onChange={(e) =>
-                  setStreamType(e.target.value as "RTSP" | "RTSPS" | "DEMO_MP4")
+                  setStreamType(
+                    e.target.value as
+                      | "RTSP"
+                      | "RTSPS"
+                      | "HLS"
+                      | "HTTP_MJPEG"
+                      | "RTMP"
+                      | "DEMO_MP4",
+                  )
                 }
                 className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-sm"
               >
-                <option value="RTSP">RTSP</option>
-                <option value="RTSPS">RTSPS</option>
+                <option value="RTSP">RTSP (rtsp://)</option>
+                <option value="RTSPS">RTSPS (rtsps://)</option>
+                <option value="HLS">HLS Live (.m3u8)</option>
+                <option value="HTTP_MJPEG">HTTP / MJPEG</option>
+                <option value="RTMP">RTMP (rtmp://)</option>
                 <option value="DEMO_MP4">DEMO_MP4 (Demo mode only)</option>
               </select>
             </label>
@@ -215,7 +228,17 @@ export default function CameraSettingsPage() {
                 required
                 value={streamUrl}
                 onChange={(e) => setStreamUrl(e.target.value)}
-                placeholder="rtsp://192.168.10.50:554/stream1"
+                placeholder={
+                  streamType === "HLS"
+                    ? "https://wzmedia.dot.ca.gov/D7/CCTV-101.stream/playlist.m3u8"
+                    : streamType === "HTTP_MJPEG"
+                      ? "http://camera-ip/mjpg/video.mjpg"
+                      : streamType === "RTMP"
+                        ? "rtmp://stream-host/live/cam1"
+                        : streamType === "DEMO_MP4"
+                          ? "demo://sample_floor.mp4"
+                          : "rtsp://192.168.10.50:554/stream1"
+                }
                 className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 font-mono text-sm"
               />
             </label>
@@ -238,7 +261,7 @@ export default function CameraSettingsPage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium">
-              Target FPS (1–5)
+              ML Inference FPS (1–5)
               <input
                 type="number"
                 min={1}
@@ -330,7 +353,7 @@ export default function CameraSettingsPage() {
                 <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
                   <span>{cam.stream_type}</span>
                   <span>·</span>
-                  <span>{cam.target_fps} FPS</span>
+                  <span>ML: {cam.target_fps} FPS</span>
                   <span>·</span>
                   <span className="inline-flex items-center gap-1 text-emerald-700">
                     <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />

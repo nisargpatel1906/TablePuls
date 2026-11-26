@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { apiFetch, ApiError, type AuthUser } from "@/lib/api";
 import { defaultHomeForRole } from "@/lib/rbac";
 import { useAuth } from "@/providers/AuthProvider";
@@ -41,6 +42,8 @@ function RegisterInner() {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -149,16 +152,16 @@ function RegisterInner() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <section className="w-full max-w-[460px] tp-card p-6 sm:p-8">
-        <div className="mb-5">
+    <main className="min-h-screen flex items-center justify-center p-3 sm:p-4">
+      <section className="w-full max-w-[460px] tp-card p-5 sm:p-6">
+        <div className="mb-3.5">
           <span className="inline-flex rounded-full bg-[#007AFF]/14 px-3 py-1 text-xs font-semibold text-[#0055B8] dark:text-[#64B5FF]">
             {token && inviteInfo ? "Invitation Verified" : "First-Run Setup"}
           </span>
-          <h1 className="text-[22px] font-bold mt-2">
+          <h1 className="text-[21px] font-bold mt-1.5">
             {token && inviteInfo ? "Accept Invitation" : "Create Owner Account"}
           </h1>
-          <p className="text-sm text-[var(--tp-label-secondary)] mt-1">
+          <p className="text-xs sm:text-sm text-[var(--tp-label-secondary)] mt-0.5">
             {token && inviteInfo ? (
               <>
                 Join <strong>{inviteInfo.organization_name}</strong> as{" "}
@@ -173,16 +176,16 @@ function RegisterInner() {
         {errorMsg && (
           <div
             role="alert"
-            className="mb-4 rounded-2xl bg-[#FF3B30]/14 px-4 py-3 text-xs font-semibold text-[#B42318] dark:text-[#FF8A80]"
+            className="mb-3 rounded-2xl bg-[#FF3B30]/14 px-4 py-2.5 text-xs font-semibold text-[#B42318] dark:text-[#FF8A80]"
           >
             {errorMsg}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           {!token && (
             <div>
-              <label htmlFor="reg-org" className="block text-xs font-semibold mb-1.5">
+              <label htmlFor="reg-org" className="block text-xs font-semibold mb-1">
                 Organization / Restaurant Group Name
               </label>
               <input
@@ -191,13 +194,13 @@ function RegisterInner() {
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
                 placeholder="Bistro Group"
-                className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
+                className="w-full min-h-[42px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
               />
             </div>
           )}
 
           <div>
-            <label htmlFor="reg-email" className="block text-xs font-semibold mb-1.5">
+            <label htmlFor="reg-email" className="block text-xs font-semibold mb-1">
               {token ? "Invited Email" : "Owner Email"}
             </label>
             <input
@@ -207,12 +210,13 @@ function RegisterInner() {
               readOnly={Boolean(token)}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)] read-only:opacity-75"
+              placeholder={token ? "" : "owner@restaurant.com"}
+              className="w-full min-h-[42px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)] read-only:opacity-75"
             />
           </div>
 
           <div>
-            <label htmlFor="reg-name" className="block text-xs font-semibold mb-1.5">
+            <label htmlFor="reg-name" className="block text-xs font-semibold mb-1">
               Full Name
             </label>
             <input
@@ -221,24 +225,38 @@ function RegisterInner() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Enter Full Name"
-              className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
+              className="w-full min-h-[42px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
             />
           </div>
 
           <div>
-            <label htmlFor="reg-pw" className="block text-xs font-semibold mb-1.5">
+            <label htmlFor="reg-pw" className="block text-xs font-semibold mb-1">
               Password (min 12 characters)
             </label>
-            <input
-              id="reg-pw"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-describedby="pw-strength-desc"
-              className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
-            />
-            <div className="mt-2 flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <input
+                id="reg-pw"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-describedby="pw-strength-desc"
+                className="w-full min-h-[42px] rounded-[14px] bg-[var(--tp-inset-field)] pl-3.5 pr-11 text-sm border border-[var(--tp-card-border)]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-1.5 inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--tp-label-secondary)] hover:bg-[var(--tp-surface)]"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5">
               {[0, 1, 2, 3].map((idx) => (
                 <div
                   key={idx}
@@ -262,29 +280,43 @@ function RegisterInner() {
           </div>
 
           <div>
-            <label htmlFor="reg-confirm" className="block text-xs font-semibold mb-1.5">
+            <label htmlFor="reg-confirm" className="block text-xs font-semibold mb-1">
               Confirm Password
             </label>
-            <input
-              id="reg-confirm"
-              type="password"
-              required
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-              className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm border border-[var(--tp-card-border)]"
-            />
+            <div className="relative flex items-center">
+              <input
+                id="reg-confirm"
+                type={showConfirmPw ? "text" : "password"}
+                required
+                value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)}
+                className="w-full min-h-[42px] rounded-[14px] bg-[var(--tp-inset-field)] pl-3.5 pr-11 text-sm border border-[var(--tp-card-border)]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPw((v) => !v)}
+                aria-label={showConfirmPw ? "Hide confirm password" : "Show confirm password"}
+                className="absolute right-1.5 inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--tp-label-secondary)] hover:bg-[var(--tp-surface)]"
+              >
+                {showConfirmPw ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full min-h-[48px] rounded-full bg-[var(--tp-accent)] text-white text-sm font-semibold disabled:opacity-60"
+            className="w-full min-h-[44px] rounded-full bg-[var(--tp-accent)] text-white text-sm font-semibold disabled:opacity-60"
           >
             {submitting ? "Creating Account..." : "Create Account"}
           </button>
         </form>
 
-        <div className="mt-4 text-center">
+        <div className="mt-3 text-center">
           <Link href="/login" className="text-xs font-semibold text-[var(--tp-accent-text)] hover:underline">
             Already have an account? Sign In
           </Link>

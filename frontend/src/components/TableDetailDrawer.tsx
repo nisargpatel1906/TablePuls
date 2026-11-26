@@ -173,9 +173,15 @@ export function TableDetailDrawer({
     >
       <div className="flex items-start justify-between gap-2 border-b border-[var(--border-subtle)] pb-3">
         <div>
-          <h2 className="text-lg font-bold">
-            {detail ? `Table ${detail.table.table_code}` : "Loading Table..."}
-          </h2>
+          {standalone ? (
+            <h1 className="text-xl font-bold">
+              {detail ? `Table ${detail.table.table_code}` : "Loading Table..."}
+            </h1>
+          ) : (
+            <h2 className="text-lg font-bold">
+              {detail ? `Table ${detail.table.table_code}` : "Loading Table..."}
+            </h2>
+          )}
           {detail && (
             <p className="text-xs text-[var(--text-secondary)]">
               Section {detail.table.section_name} · Cap {detail.table.seat_capacity} · Version v

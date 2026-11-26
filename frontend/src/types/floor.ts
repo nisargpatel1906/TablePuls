@@ -109,7 +109,7 @@ export interface CameraItem {
   id: string;
   venue_id: string;
   name: string;
-  stream_type: "RTSP" | "RTSPS" | "DEMO_MP4" | string;
+  stream_type: "RTSP" | "RTSPS" | "HLS" | "HTTP_MJPEG" | "RTMP" | "DEMO_MP4" | string;
   masked_stream_url?: string;
   target_fps: number;
   face_blur_enabled: boolean;

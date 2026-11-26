@@ -50,6 +50,7 @@ export function AppShell({
 }: AppShellProps) {
   const {
     user,
+    loading: authLoading,
     venues,
     theme,
     solidMode,
@@ -157,6 +158,23 @@ export function AppShell({
     router.push("/login");
   };
 
+  if (!authLoading && !user) {
+    return (
+      <main className="mx-auto max-w-lg p-6 text-center">
+        <h1 className="text-xl font-bold">Sign in required</h1>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          Please sign in to access TablePulse.
+        </p>
+        <Link
+          href="/login"
+          className="mt-4 inline-block rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-sm font-semibold text-white"
+        >
+          Go to Login
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* Desktop Sticky Liquid Glass Sidebar */}
@@ -261,7 +279,7 @@ export function AppShell({
       </aside>
 
       {/* Main Content Column */}
-      <div className="flex-1 flex flex-col min-w-0 pb-24 lg:pb-6">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top Floating Status Bar */}
         <header className="sticky top-0 lg:top-3.5 z-30 mx-3 lg:mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-full tp-glass px-3.5 py-2">
           <div className="flex items-center gap-2.5">
@@ -334,7 +352,7 @@ export function AppShell({
           </div>
         )}
 
-        <main className="flex-1 px-3 lg:px-6 pt-4 pb-24 lg:pb-6">{children}</main>
+        <main className="flex-1 px-3 lg:px-6 pt-4 pb-28 lg:pb-6">{children}</main>
       </div>
 
       {/* Mobile / Tablet Bottom Dock (<1024px) */}

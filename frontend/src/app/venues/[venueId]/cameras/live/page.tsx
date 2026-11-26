@@ -11,6 +11,8 @@ import { formatElapsed, TABLE_STATE_META } from "@/lib/table-states";
 import { useAuth } from "@/providers/AuthProvider";
 import type { CameraItem, FloorTable } from "@/types/floor";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 interface PreviewPayload {
   camera_id: string;
   status: string;
@@ -98,7 +100,10 @@ export default function LiveCameraWallPage() {
   const [cameras, setCameras] = useState<CameraItem[]>([]);
   const [tables, setTables] = useState<FloorTable[]>([]);
   const [previews, setPreviews] = useState<Record<string, PreviewPayload>>({});
-  const [streamTokens, setStreamTokens] = useState<Record<string, string>>({});
+  const [streamTokens, setStreamTokens] = useState<
+    Record<string, { whepUrl?: string; mjpegUrl: string }>
+  >({});
+  const [displayFps, setDisplayFps] = useState<24 | 30 | 60>(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [gridCols, setGridCols] = useState<1 | 2>(2);
@@ -146,7 +151,31 @@ export default function LiveCameraWallPage() {
       ]);
       setCameras(camRes.items);
       setTables(floorRes.tables);
-      await refreshPreviews(camRes.items);
+      // Issue live stream tokens immediately for ONLINE cameras so they stream at Display FPS (24/30/60)
+      const onlineCams = camRes.items.filter((c) => c.status === "ONLINE");
+      if (onlineCams.length > 0) {
+        void Promise.all(
+          onlineCams.map(async (c) => {
+            try {
+              const tok = await apiFetch<{ whep_url: string; mjpeg_url: string }>(
+                `/api/v1/venues/${venueId}/cameras/${c.id}/stream-token`,
+                { method: "POST" },
+              );
+              setStreamTokens((prev) => ({
+                ...prev,
+                [c.id]: { mjpegUrl: `${API_BASE}${tok.mjpeg_url}` },
+              }));
+            } catch {
+              // Fallback to /preview if token issuance fails
+            }
+          }),
+        );
+      }
+      // Fetch initial /preview snapshots in background (only for cameras without an active live stream)
+      const previewCams = camRes.items.filter((c) => c.status !== "ONLINE");
+      if (previewCams.length > 0) {
+        void refreshPreviews(previewCams);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load cameras");
     } finally {
@@ -160,22 +189,28 @@ export default function LiveCameraWallPage() {
     }
   }, [authLoading, user, loadFeeds]);
 
-  // Periodically refresh blurred snapshots for near-live camera preview when WebRTC publisher is absent
+  // Periodically refresh blurred snapshots only for cameras without an active live MJPEG/WebRTC stream
   useEffect(() => {
     if (!canViewCameras || cameras.length === 0) return;
     const t = window.setInterval(() => {
-      void refreshPreviews(cameras);
+      const pending = cameras.filter((c) => !streamTokens[c.id]);
+      if (pending.length > 0) {
+        void refreshPreviews(pending);
+      }
     }, 4000);
     return () => window.clearInterval(t);
-  }, [canViewCameras, cameras, refreshPreviews]);
+  }, [canViewCameras, cameras, streamTokens, refreshPreviews]);
 
   async function requestWhepToken(cameraId: string) {
     try {
-      const tok = await apiFetch<{ whep_url: string }>(
+      const tok = await apiFetch<{ whep_url: string; mjpeg_url: string }>(
         `/api/v1/venues/${venueId}/cameras/${cameraId}/stream-token`,
         { method: "POST" },
       );
-      setStreamTokens((prev) => ({ ...prev, [cameraId]: tok.whep_url }));
+      setStreamTokens((prev) => ({
+        ...prev,
+        [cameraId]: { whepUrl: tok.whep_url, mjpegUrl: `${API_BASE}${tok.mjpeg_url}` },
+      }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to issue stream token");
     }
@@ -209,6 +244,19 @@ export default function LiveCameraWallPage() {
                   onChange={(e) => setShowTimers(e.target.checked)}
                 />
                 Show Dwell Timers
+              </label>
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold">
+                <span>Display FPS</span>
+                <select
+                  aria-label="Live display FPS"
+                  value={displayFps}
+                  onChange={(e) => setDisplayFps(Number(e.target.value) as 24 | 30 | 60)}
+                  className="bg-transparent text-xs font-bold outline-none"
+                >
+                  <option value={24}>24 FPS</option>
+                  <option value={30}>30 FPS</option>
+                  <option value={60}>60 FPS</option>
+                </select>
               </label>
               <button
                 type="button"
@@ -274,8 +322,18 @@ export default function LiveCameraWallPage() {
             {cameras.map((cam) => {
               const preview = previews[cam.id];
               const camTables = tables.filter((t) => t.camera_id === cam.id);
-              const whepUrl = streamTokens[cam.id];
-              const fallbackNode = preview ? (
+              const tokens = streamTokens[cam.id];
+              const whepUrl = tokens?.whepUrl;
+              const liveMjpegUrl = tokens?.mjpegUrl ? `${tokens.mjpegUrl}&fps=${displayFps}` : null;
+              const fallbackNode = liveMjpegUrl ? (
+                // High-FPS face-blurred multipart MJPEG live stream
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={liveMjpegUrl}
+                  alt={`Live ${displayFps} FPS face-blurred stream for ${cam.name}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : preview ? (
                 // Dynamic base64 face-blurred camera frame cannot use static next/image
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -284,10 +342,12 @@ export default function LiveCameraWallPage() {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-300">
-                  {loading
-                    ? `Loading privacy-blurred preview for ${cam.name}...`
-                    : `Camera feed unavailable (${cam.status}). Verify RTSP/MediaMTX connectivity.`}
+                <div className="flex h-full items-end justify-start p-2.5 text-left text-[11px] text-slate-200">
+                  <span className="rounded-md bg-slate-950/80 px-2.5 py-1 backdrop-blur-sm">
+                    {loading
+                      ? `Loading privacy-blurred preview for ${cam.name}...`
+                      : `Camera feed unavailable (${cam.status}). Verify RTSP/MediaMTX connectivity.`}
+                  </span>
                 </div>
               );
 
@@ -300,7 +360,7 @@ export default function LiveCameraWallPage() {
                     <div>
                       <h2 className="text-sm font-bold">{cam.name}</h2>
                       <p className="text-[11px] text-[var(--text-secondary)]">
-                        {cam.stream_type} · {cam.target_fps} FPS · Status: {cam.status}
+                        {cam.stream_type} · Display: {displayFps} FPS · ML: {cam.target_fps} FPS · Status: {cam.status}
                       </p>
                     </div>
                     <button
@@ -348,6 +408,12 @@ export default function LiveCameraWallPage() {
                                   tbl.polygon_json.length) *
                                 100
                               : 50;
+                          const timerText =
+                            showTimers && tbl.occupied_since
+                              ? formatElapsed(tbl.occupied_since, nowMs)
+                              : "";
+                          const pillWidth = timerText ? 14 : 7.5;
+                          const pillHeight = timerText ? 6.8 : 4;
                           return pts ? (
                             <g key={tbl.id}>
                               <polygon
@@ -356,19 +422,38 @@ export default function LiveCameraWallPage() {
                                 stroke={meta.accentHex}
                                 strokeWidth="0.6"
                               />
+                              <rect
+                                x={cx - pillWidth / 2}
+                                y={cy - pillHeight / 2}
+                                width={pillWidth}
+                                height={pillHeight}
+                                rx="1"
+                                fill="rgba(15, 23, 42, 0.78)"
+                              />
                               <text
                                 x={cx}
-                                y={cy}
+                                y={timerText ? cy - 1.1 : cy}
                                 fill="#FFFFFF"
-                                fontSize="3.4"
+                                fontSize="2.5"
                                 fontWeight="bold"
                                 textAnchor="middle"
+                                dominantBaseline="middle"
                               >
                                 {tbl.table_code}
-                                {showTimers && tbl.occupied_since
-                                  ? ` (${formatElapsed(tbl.occupied_since, nowMs)})`
-                                  : ""}
                               </text>
+                              {timerText && (
+                                <text
+                                  x={cx}
+                                  y={cy + 1.7}
+                                  fill="#E2E8F0"
+                                  fontSize="2.1"
+                                  fontWeight="600"
+                                  textAnchor="middle"
+                                  dominantBaseline="middle"
+                                >
+                                  {timerText}
+                                </text>
+                              )}
                             </g>
                           ) : null;
                         })}

@@ -23,15 +23,28 @@ def _is_forbidden_ip(ip_str: str, *, block_private: bool) -> bool:
     return bool(block_private and ip.is_private)
 
 
-def validate_rtsp_url(raw_url: str) -> str:
-    """Validate RTSP/RTSPS URL and block loopback/link-local/metadata SSRF targets."""
+_STREAM_SCHEMES: dict[str, tuple[set[str], int]] = {
+    "RTSP": ({"rtsp"}, 554),
+    "RTSPS": ({"rtsps"}, 322),
+    "HLS": ({"http", "https"}, 443),
+    "HTTP_MJPEG": ({"http", "https"}, 80),
+    "RTMP": ({"rtmp", "rtmps"}, 1935),
+}
+
+
+def validate_camera_stream_url(raw_url: str, stream_type: str = "RTSP") -> str:
+    """Validate camera stream URL scheme for stream_type and block SSRF targets."""
+    allowed_schemes, default_port = _STREAM_SCHEMES.get(
+        stream_type, ({"rtsp", "rtsps"}, 554)
+    )
     parsed = urlparse(raw_url.strip())
-    if parsed.scheme.lower() not in {"rtsp", "rtsps"}:
+    if parsed.scheme.lower() not in allowed_schemes:
+        expected = " or ".join(f"{s}://" for s in sorted(allowed_schemes))
         raise AppError(
             400,
             "VALIDATION_ERROR",
             "Invalid camera stream URL",
-            {"stream_url": "must start with rtsp:// or rtsps://"},
+            {"stream_url": f"must start with {expected}"},
         )
     if not parsed.hostname:
         raise AppError(
@@ -60,7 +73,7 @@ def validate_rtsp_url(raw_url: str) -> str:
     except ValueError:
         # Hostname: resolve if possible to catch loopback/metadata DNS tricks
         try:
-            infos = socket.getaddrinfo(host, parsed.port or 554, type=socket.SOCK_STREAM)
+            infos = socket.getaddrinfo(host, parsed.port or default_port, type=socket.SOCK_STREAM)
             for info in infos:
                 resolved_ip = str(info[4][0])
                 if _is_forbidden_ip(resolved_ip, block_private=False):
@@ -74,6 +87,19 @@ def validate_rtsp_url(raw_url: str) -> str:
             # Allow unresolved LAN hostnames at config save time; test endpoint reports 422
             pass
     return raw_url.strip()
+
+
+def validate_rtsp_url(raw_url: str) -> str:
+    """Validate RTSP/RTSPS URL and block loopback/link-local/metadata SSRF targets."""
+    parsed = urlparse(raw_url.strip())
+    if parsed.scheme.lower() not in {"rtsp", "rtsps"}:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Invalid camera stream URL",
+            {"stream_url": "must start with rtsp:// or rtsps://"},
+        )
+    return validate_camera_stream_url(raw_url, parsed.scheme.upper())
 
 
 def validate_webhook_url(raw_url: str) -> str:

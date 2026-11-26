@@ -28,10 +28,13 @@ class UpdateVenueRequest(StrictSchema):
     guests_per_server_ratio: int | None = Field(default=None, ge=4, le=50)
 
 
+StreamTypeLiteral = Literal["RTSP", "RTSPS", "HLS", "HTTP_MJPEG", "RTMP", "DEMO_MP4"]
+
+
 class CreateCameraRequest(StrictSchema):
     name: str = Field(min_length=2, max_length=100)
-    stream_type: Literal["RTSP", "RTSPS", "DEMO_MP4"]
-    stream_url: str = Field(min_length=4, max_length=512)
+    stream_type: StreamTypeLiteral
+    stream_url: str = Field(min_length=4, max_length=2048)
     username: str | None = Field(default=None, max_length=128)
     password: str | None = Field(default=None, max_length=128)
     target_fps: int = Field(default=2, ge=1, le=5)
@@ -40,8 +43,8 @@ class CreateCameraRequest(StrictSchema):
 
 class UpdateCameraRequest(StrictSchema):
     name: str | None = Field(default=None, min_length=2, max_length=100)
-    stream_type: Literal["RTSP", "RTSPS", "DEMO_MP4"] | None = None
-    stream_url: str | None = Field(default=None, min_length=4, max_length=512)
+    stream_type: StreamTypeLiteral | None = None
+    stream_url: str | None = Field(default=None, min_length=4, max_length=2048)
     username: str | None = Field(default=None, max_length=128)
     password: str | None = Field(default=None, max_length=128)
     target_fps: int | None = Field(default=None, ge=1, le=5)

@@ -169,8 +169,8 @@ export default function FloorCanvas({
                 {tbl.shape === "CIRCLE" ? (
                   <Circle
                     x={55}
-                    y={48}
-                    radius={48}
+                    y={50}
+                    radius={50}
                     fill={meta.accentHex + (isDark ? "38" : "24")}
                     stroke={isSelected ? (isDark ? "#F8FAFC" : "#0F172A") : meta.accentHex}
                     strokeWidth={isSelected ? 4 : 2.5}
@@ -188,9 +188,9 @@ export default function FloorCanvas({
                   />
                 )}
                 <Text
-                  x={8}
-                  y={16}
-                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
+                  x={tbl.shape === "CIRCLE" ? 13 : 8}
+                  y={tbl.shape === "CIRCLE" ? 15 : 16}
+                  width={tbl.shape === "CIRCLE" ? 84 : textWidth}
                   align="center"
                   text={tbl.table_code}
                   fontSize={16}
@@ -198,21 +198,21 @@ export default function FloorCanvas({
                   fill={isDark ? "#F8FAFC" : "#0F172A"}
                 />
                 <Text
-                  x={8}
-                  y={38}
-                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
+                  x={tbl.shape === "CIRCLE" ? 13 : 8}
+                  y={tbl.shape === "CIRCLE" ? 36 : 38}
+                  width={tbl.shape === "CIRCLE" ? 84 : textWidth}
                   align="center"
                   text={`${tbl.current_guest_count}/${tbl.seat_capacity} guests`}
-                  fontSize={12}
+                  fontSize={11.5}
                   fill={isDark ? "#CBD5E1" : "#334155"}
                 />
                 <Text
-                  x={8}
-                  y={58}
-                  width={tbl.shape === "CIRCLE" ? 94 : textWidth}
+                  x={tbl.shape === "CIRCLE" ? 13 : 8}
+                  y={tbl.shape === "CIRCLE" ? 55 : 58}
+                  width={tbl.shape === "CIRCLE" ? 84 : textWidth}
                   align="center"
                   text={dwell || meta.label}
-                  fontSize={11}
+                  fontSize={tbl.shape === "CIRCLE" ? 9.5 : 11}
                   fill={meta.accentHex}
                   fontStyle="bold"
                 />
