@@ -30,6 +30,7 @@ dependencies = [
     "pillow==13.0.0",
     "segno==1.6.6",
     "reportlab==5.1.2",
+    "tzdata==2026.6",
 ]
 
 [project.optional-dependencies]
@@ -70,7 +71,7 @@ warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["zxcvbn", "cv2"]
+module = ["zxcvbn", "cv2", "segno", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

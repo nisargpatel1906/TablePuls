@@ -12,14 +12,17 @@ import {
   Clock,
   Grid2x2,
   Languages,
+  LayoutGrid,
   LogOut,
   Menu,
   Moon,
   PenTool,
+  QrCode,
   Shield,
   Sliders,
   Sun,
   Users,
+  UtensilsCrossed,
   Video,
   X,
 } from "lucide-react";
@@ -110,9 +113,27 @@ export function AppShell({
       icon: CheckSquare,
       show: Boolean(activeVenueId) && hasCapability(user?.role, "ml_review.label"),
     },
+    {
+      href: `/venues/${activeVenueId}/menu`,
+      label: t(locale, "nav.menu"),
+      icon: UtensilsCrossed,
+      show: Boolean(activeVenueId) && hasCapability(user?.role, "menu.read"),
+    },
   ].filter((item) => item.show);
 
   const adminNav = [
+    {
+      href: `/venues/${activeVenueId}/settings/tables`,
+      label: t(locale, "nav.tables"),
+      icon: LayoutGrid,
+      show: Boolean(activeVenueId) && hasCapability(user?.role, "tables.read"),
+    },
+    {
+      href: `/venues/${activeVenueId}/settings/qr-codes`,
+      label: t(locale, "nav.qr_codes"),
+      icon: QrCode,
+      show: Boolean(activeVenueId) && hasCapability(user?.role, "qr.read"),
+    },
     {
       href: `/venues/${activeVenueId}/settings/cameras`,
       label: t(locale, "nav.cam_settings"),
@@ -214,7 +235,7 @@ export function AppShell({
           </div>
         )}
 
-        <nav className="mt-2.5 flex-1 space-y-0.5 overflow-y-auto">
+        <nav className="mt-2 flex-1 space-y-0.5 overflow-y-auto">
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -222,18 +243,18 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between min-h-[36px] px-2.5 py-1 rounded-xl text-[13px] font-medium transition ${
+                className={`flex items-center justify-between min-h-[30px] px-2.5 py-0.5 rounded-xl text-[12.5px] font-medium transition ${
                   active
                     ? "bg-[var(--tp-accent)] text-white"
                     : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   {item.label}
                 </span>
                 {typeof item.badge === "number" && item.badge > 0 && (
-                  <span className="rounded-full bg-[#FF3B30] px-1.5 py-0.5 text-[11px] font-bold text-white tabular-nums">
+                  <span className="rounded-full bg-[#FF3B30] px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums">
                     {item.badge}
                   </span>
                 )}
@@ -242,7 +263,7 @@ export function AppShell({
           })}
 
           {adminNav.length > 0 && (
-            <div className="pt-2 mt-1.5 border-t border-[var(--tp-separator)] space-y-0.5">
+            <div className="pt-1.5 mt-1 border-t border-[var(--tp-separator)] space-y-0.5">
               <div className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--tp-label-secondary)]">
                 Admin
               </div>
@@ -253,13 +274,13 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2 min-h-[36px] px-2.5 py-1 rounded-xl text-[13px] font-medium transition ${
+                    className={`flex items-center gap-2 min-h-[30px] px-2.5 py-0.5 rounded-xl text-[12.5px] font-medium transition ${
                       active
                         ? "bg-[var(--tp-accent)] text-white"
                         : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
                     }`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {item.label}
                   </Link>
                 );
@@ -271,7 +292,7 @@ export function AppShell({
         <button
           type="button"
           onClick={handleSignOut}
-          className="mt-1.5 flex items-center gap-2 min-h-[36px] px-2.5 rounded-xl text-[13px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
+          className="mt-1 flex items-center gap-2 min-h-[32px] px-2.5 rounded-xl text-[12.5px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
         >
           <LogOut className="h-4 w-4" aria-hidden="true" />
           {t(locale, "action.sign_out")}

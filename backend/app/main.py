@@ -20,7 +20,10 @@ from app.api.admin_ops import purge_expired_snapshots_once
 from app.api.admin_ops import router as admin_ops_router
 from app.api.auth import router as auth_router
 from app.api.floor_ops import router as floor_ops_router
+from app.api.menus_admin import router as menus_admin_router
 from app.api.org_users import router as org_users_router
+from app.api.qr_admin import expire_grace_qr_codes_once
+from app.api.qr_admin import router as qr_admin_router
 from app.api.tables_admin import router as tables_admin_router
 from app.api.venues_cameras import router as venues_cameras_router
 from app.api.waitlist_analytics import router as waitlist_analytics_router
@@ -45,16 +48,20 @@ HTTP_LATENCY = Histogram(
 
 
 async def _retention_cleanup_loop(stop_event: asyncio.Event) -> None:
-    """Periodically purge expired face-blurred review crop snapshots per org retention policy."""
+    """Periodically purge expired review crop snapshots and expire QR grace tokens."""
     factory = get_session_factory()
+    cycles = 0
     while not stop_event.is_set():
         try:
             async with factory() as db:
-                await purge_expired_snapshots_once(db)
+                await expire_grace_qr_codes_once(db)
+                if cycles % 12 == 0:
+                    await purge_expired_snapshots_once(db)
         except Exception:
             pass
+        cycles += 1
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=3600.0)
+            await asyncio.wait_for(stop_event.wait(), timeout=300.0)
         except TimeoutError:
             continue
 
@@ -150,6 +157,8 @@ def create_app() -> FastAPI:
     app.include_router(org_users_router)
     app.include_router(venues_cameras_router)
     app.include_router(tables_admin_router)
+    app.include_router(menus_admin_router)
+    app.include_router(qr_admin_router)
     app.include_router(floor_ops_router)
     app.include_router(waitlist_analytics_router)
     app.include_router(admin_ops_router)
