@@ -94,3 +94,31 @@ capabilities:
   privacy.purge:
     roles: [OWNER]
     screens: [SCR-016]
+
+  # Phase 2 Capabilities (+8)
+  tables.read:
+    roles: [OWNER, MANAGER, HOST, VIEWER]
+    screens: [SCR-017]
+  tables.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-017]
+  menu.read:
+    roles: [OWNER, MANAGER, HOST, STAFF, VIEWER]
+    screens: [SCR-018, SCR-022]
+  menu.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-018, SCR-019, SCR-021]
+  menu.availability:
+    roles: [OWNER, MANAGER]
+    conditional_roles:
+      HOST: venue.allow_host_menu_availability == true
+    screens: [SCR-018]
+  menu.currency_manage:
+    roles: [OWNER]
+    screens: [SCR-018]
+  qr.read:
+    roles: [OWNER, MANAGER, HOST, VIEWER]
+    screens: [SCR-020]
+  qr.manage:
+    roles: [OWNER, MANAGER]
+    screens: [SCR-020]

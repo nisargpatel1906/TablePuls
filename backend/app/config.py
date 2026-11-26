@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://tablepulse:change_me_postgres_password@localhost:5432/tablepulse",
         validation_alias="DATABASE_URL",
     )
+    public_database_url: str = Field(
+        default="postgresql+asyncpg://tablepulse_public:tablepulse_public_readonly@localhost:5432/tablepulse",
+        validation_alias="PUBLIC_DATABASE_URL",
+    )
     valkey_url: str = Field(
         default="redis://localhost:6379/0",
         validation_alias="VALKEY_URL",
@@ -68,6 +72,10 @@ class Settings(BaseSettings):
         default="/app/data/snapshots",
         validation_alias="SNAPSHOT_STORAGE_DIR",
     )
+    menu_media_dir: str = Field(
+        default="/app/data/menu-media",
+        validation_alias="MENU_MEDIA_DIR",
+    )
     ml_model_dir: str = Field(
         default="/app/data/models",
         validation_alias="ML_MODEL_DIR",
@@ -93,6 +101,24 @@ class Settings(BaseSettings):
     review_crops_enabled: bool = Field(
         default_factory=lambda: _parse_bool_env("REVIEW_CROPS_ENABLED", False),
         validation_alias="REVIEW_CROPS_ENABLED",
+    )
+
+    # Phase 2 fail-closed feature flags (missing => False)
+    table_advanced_enabled: bool = Field(
+        default_factory=lambda: _parse_bool_env("TABLE_ADVANCED_ENABLED", False),
+        validation_alias="TABLE_ADVANCED_ENABLED",
+    )
+    qr_enabled: bool = Field(
+        default_factory=lambda: _parse_bool_env("QR_ENABLED", False),
+        validation_alias="QR_ENABLED",
+    )
+    public_menu_enabled: bool = Field(
+        default_factory=lambda: _parse_bool_env("PUBLIC_MENU_ENABLED", False),
+        validation_alias="PUBLIC_MENU_ENABLED",
+    )
+    menu_images_enabled: bool = Field(
+        default_factory=lambda: _parse_bool_env("MENU_IMAGES_ENABLED", False),
+        validation_alias="MENU_IMAGES_ENABLED",
     )
 
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
@@ -125,6 +151,8 @@ class Settings(BaseSettings):
             ):
                 if any(p in val.lower() for p in placeholders) or len(val) < 16:
                     raise RuntimeError(f"Insecure placeholder secret for {name} in production")
+            if not self.public_app_url.lower().startswith("https://"):
+                raise RuntimeError("PUBLIC_APP_URL must start with https:// in production mode")
 
 
 @lru_cache(maxsize=1)

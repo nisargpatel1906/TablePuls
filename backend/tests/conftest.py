@@ -57,6 +57,12 @@ async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 async def clean_db(db_engine: AsyncEngine) -> AsyncIterator[None]:
     """Clean all application tables before/after integration tests."""
     tables = [
+        "qr_scan_daily_stats",
+        "menu_items",
+        "menu_media_assets",
+        "menu_categories",
+        "menus",
+        "table_qr_codes",
         "audit_logs",
         "alert_rules",
         "ml_review_items",

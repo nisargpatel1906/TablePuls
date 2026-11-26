@@ -16,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.errors import AppError
 from app.core.security import decode_access_token
 from app.core.valkey_client import is_user_revoked
@@ -62,10 +63,15 @@ def roles_for_capability(capability: str) -> set[Role]:
     return {Role(r) for r in cap.get("roles", [])}
 
 
-def capability_allows_conditional_host(capability: str) -> bool:
+def capability_conditional_host_attr(capability: str) -> str | None:
     matrix = load_rbac_matrix()
     cap = matrix["capabilities"].get(capability, {})
-    return "HOST" in cap.get("conditional_roles", {})
+    cond = cap.get("conditional_roles", {}).get("HOST")
+    if not cond:
+        return None
+    if "allow_host_menu_availability" in str(cond):
+        return "allow_host_menu_availability"
+    return "allow_host_camera_view"
 
 
 async def get_current_user(
@@ -125,8 +131,8 @@ def require_venue_role(
     resolved_roles = (
         roles_for_capability(capability) if capability is not None else (allowed_roles or set())
     )
-    allow_cond_host = (
-        capability_allows_conditional_host(capability) if capability is not None else False
+    cond_host_attr = (
+        capability_conditional_host_attr(capability) if capability is not None else None
     )
 
     async def _dependency(
@@ -154,10 +160,28 @@ def require_venue_role(
         if user_role in resolved_roles:
             return user
 
-        if allow_cond_host and user_role == Role.HOST and venue.allow_host_camera_view:
+        if (
+            cond_host_attr
+            and user_role == Role.HOST
+            and bool(getattr(venue, cond_host_attr, False))
+        ):
             return user
 
         raise AppError(403, "AUTH_FORBIDDEN", "Insufficient venue permissions")
 
     cast(Any, _dependency)._tp_rbac_protected = True
     return _dependency
+
+
+def require_feature_flag(flag_attr: str) -> Callable[..., Awaitable[None]]:
+    """Fail-closed Phase 2 feature flag guard (missing or false => 503 FEATURE_DISABLED)."""
+
+    async def _guard() -> None:
+        if not bool(getattr(get_settings(), flag_attr, False)):
+            raise AppError(
+                503,
+                "FEATURE_DISABLED",
+                f"Feature '{flag_attr}' is currently disabled",
+            )
+
+    return _guard

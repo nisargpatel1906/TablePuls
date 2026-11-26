@@ -28,6 +28,8 @@ dependencies = [
     "opencv-python-headless==4.14.0.94",
     "numpy==2.5.5",
     "pillow==13.0.0",
+    "segno==1.6.6",
+    "reportlab==5.1.2",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +43,7 @@ dev = [
     "pip-licenses==5.5.5",
     "pip-audit==2.10.1",
     "types-pyyaml>=6.0.12",
+    "zxing-cpp==3.2.0.post1",
 ]
 
 [project.scripts]

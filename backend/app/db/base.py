@@ -37,6 +37,8 @@ class Base(DeclarativeBase):
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_public_engine: AsyncEngine | None = None
+_public_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -55,6 +57,23 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+def get_public_engine() -> AsyncEngine:
+    """Dedicated least-privilege read-only engine connected as `tablepulse_public`."""
+    global _public_engine
+    if _public_engine is None:
+        settings = get_settings()
+        is_pg = settings.public_database_url.startswith("postgresql")
+        _public_engine = create_async_engine(
+            settings.public_database_url,
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=5,
+            connect_args={"timeout": 3, "command_timeout": 8} if is_pg else {},
+        )
+    return _public_engine
+
+
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     global _session_factory
     if _session_factory is None:
@@ -66,15 +85,34 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
+def get_public_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _public_session_factory
+    if _public_session_factory is None:
+        _public_session_factory = async_sessionmaker(
+            get_public_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    return _public_session_factory
+
+
 def reset_engine_cache() -> None:
     """Reset cached engine/sessionmaker (used in tests across event loops)."""
-    global _engine, _session_factory
+    global _engine, _session_factory, _public_engine, _public_session_factory
     _engine = None
     _session_factory = None
+    _public_engine = None
+    _public_session_factory = None
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
     factory = get_session_factory()
+    async with factory() as session:
+        yield session
+
+
+async def get_public_db() -> AsyncIterator[AsyncSession]:
+    factory = get_public_session_factory()
     async with factory() as session:
         yield session
 

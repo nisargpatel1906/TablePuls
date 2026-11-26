@@ -50,18 +50,26 @@ services:
       APP_ENV: ${APP_ENV:-development}
       TABLEPULSE_ENV: ${TABLEPULSE_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://tablepulse:change_me_postgres_password@db:5432/tablepulse}
+      PUBLIC_DATABASE_URL: ${PUBLIC_DATABASE_URL:-postgresql+asyncpg://tablepulse_public:tablepulse_public_readonly@db:5432/tablepulse}
       VALKEY_URL: ${VALKEY_URL:-redis://:change_me_valkey_password@valkey:6379/0}
       TABLEPULSE_SECRET_KEY: ${TABLEPULSE_SECRET_KEY:-dev_only_replace_with_64_hex_chars_for_jwt_signing_key_00000000}
       TABLEPULSE_DATA_KEY: ${TABLEPULSE_DATA_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       MEDIAMTX_HOOK_SECRET: ${MEDIAMTX_HOOK_SECRET:-dev_only_replace_with_mediamtx_internal_secret}
       MEDIAMTX_INTERNAL_URL: ${MEDIAMTX_INTERNAL_URL:-rtsp://mediamtx:8554}
       SNAPSHOT_STORAGE_DIR: ${SNAPSHOT_STORAGE_DIR:-/app/data/snapshots}
+      MENU_MEDIA_DIR: ${MENU_MEDIA_DIR:-/app/data/menu-media}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+      TABLE_ADVANCED_ENABLED: ${TABLE_ADVANCED_ENABLED:-true}
+      QR_ENABLED: ${QR_ENABLED:-true}
+      PUBLIC_MENU_ENABLED: ${PUBLIC_MENU_ENABLED:-true}
+      MENU_IMAGES_ENABLED: ${MENU_IMAGES_ENABLED:-true}
       DEMO_MODE: ${DEMO_MODE:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
     volumes:
       - snapshots_data:/app/data/snapshots
       - models_data:/app/data/models
       - demo_data:/app/data/demo
+      - menu_media_data:/app/data/menu-media
     ports:
       - "8000:8000"
     depends_on:
@@ -140,6 +148,7 @@ services:
       - "8080:80"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - menu_media_data:/app/data/menu-media:ro
     depends_on:
       - web
       - api
@@ -174,6 +183,7 @@ volumes:
   snapshots_data:
   models_data:
   demo_data:
+  menu_media_data:
 
 networks:
   internal:

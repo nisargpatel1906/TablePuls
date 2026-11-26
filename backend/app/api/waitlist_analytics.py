@@ -300,6 +300,7 @@ async def get_turnover_predictions(
                     DiningTable.venue_id == venue_id,
                     DiningTable.organization_id == actor.organization_id,
                     DiningTable.deleted_at.is_(None),
+                    DiningTable.is_active.is_(True),
                     DiningTable.seat_capacity >= party_size,
                     DiningTable.current_state != "UNKNOWN",
                     DiningTable.current_state != "RESERVED",
@@ -331,8 +332,10 @@ async def get_turnover_predictions(
             max_eta = max(min_eta + 2, int(round(rem * 1.2)))
             conf_tier = "Medium"
         else:
-            base_turn = hist_mean if hist_mean is not None else (
-                35.0 if t.seat_capacity <= 2 else (45.0 if t.seat_capacity <= 4 else 60.0)
+            base_turn = (
+                hist_mean
+                if hist_mean is not None
+                else (35.0 if t.seat_capacity <= 2 else (45.0 if t.seat_capacity <= 4 else 60.0))
             )
             rem = max(2.0, base_turn - elapsed_min)
             min_eta = max(1, int(round(rem * 0.75)))

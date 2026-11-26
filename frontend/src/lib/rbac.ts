@@ -21,7 +21,15 @@ export type Capability =
   | "users.manage_privileged"
   | "audit_logs.view"
   | "system.manage"
-  | "privacy.purge";
+  | "privacy.purge"
+  | "tables.read"
+  | "tables.manage"
+  | "menu.read"
+  | "menu.manage"
+  | "menu.availability"
+  | "menu.currency_manage"
+  | "qr.read"
+  | "qr.manage";
 
 const CAPABILITY_ROLES: Record<Capability, Role[]> = {
   "floor.view": ["OWNER", "MANAGER", "HOST", "STAFF", "VIEWER"],
@@ -45,15 +53,35 @@ const CAPABILITY_ROLES: Record<Capability, Role[]> = {
   "audit_logs.view": ["OWNER", "MANAGER"],
   "system.manage": ["OWNER"],
   "privacy.purge": ["OWNER"],
+  "tables.read": ["OWNER", "MANAGER", "HOST", "VIEWER"],
+  "tables.manage": ["OWNER", "MANAGER"],
+  "menu.read": ["OWNER", "MANAGER", "HOST", "STAFF", "VIEWER"],
+  "menu.manage": ["OWNER", "MANAGER"],
+  "menu.availability": ["OWNER", "MANAGER"],
+  "menu.currency_manage": ["OWNER"],
+  "qr.read": ["OWNER", "MANAGER", "HOST", "VIEWER"],
+  "qr.manage": ["OWNER", "MANAGER"],
 };
+
+export interface ConditionalHostFlags {
+  allowHostCameraView?: boolean;
+  allowHostMenuAvailability?: boolean;
+}
 
 export function hasCapability(
   role: Role | undefined | null,
   capability: Capability,
-  allowHostCameraView = false,
+  flagsOrCamView: boolean | ConditionalHostFlags = false,
 ): boolean {
   if (!role) return false;
-  if (capability === "cameras.live.view" && role === "HOST" && allowHostCameraView) {
+  const opts: ConditionalHostFlags =
+    typeof flagsOrCamView === "boolean"
+      ? { allowHostCameraView: flagsOrCamView }
+      : flagsOrCamView;
+  if (capability === "cameras.live.view" && role === "HOST" && opts.allowHostCameraView) {
+    return true;
+  }
+  if (capability === "menu.availability" && role === "HOST" && opts.allowHostMenuAvailability) {
     return true;
   }
   return CAPABILITY_ROLES[capability].includes(role);

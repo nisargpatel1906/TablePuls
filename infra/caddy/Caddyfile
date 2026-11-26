@@ -11,6 +11,16 @@
 		-Server
 	}
 
+	handle_path /media/menu/* {
+		root * /app/data/menu-media
+		file_server
+		header {
+			Cache-Control "public, max-age=31536000, immutable"
+			X-Content-Type-Options "nosniff"
+			Content-Security-Policy "default-src 'none'; sandbox"
+		}
+	}
+
 	handle /api/* {
 		reverse_proxy api:8000
 	}

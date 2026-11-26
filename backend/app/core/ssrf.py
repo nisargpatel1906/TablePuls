@@ -34,9 +34,7 @@ _STREAM_SCHEMES: dict[str, tuple[set[str], int]] = {
 
 def validate_camera_stream_url(raw_url: str, stream_type: str = "RTSP") -> str:
     """Validate camera stream URL scheme for stream_type and block SSRF targets."""
-    allowed_schemes, default_port = _STREAM_SCHEMES.get(
-        stream_type, ({"rtsp", "rtsps"}, 554)
-    )
+    allowed_schemes, default_port = _STREAM_SCHEMES.get(stream_type, ({"rtsp", "rtsps"}, 554))
     parsed = urlparse(raw_url.strip())
     if parsed.scheme.lower() not in allowed_schemes:
         expected = " or ".join(f"{s}://" for s in sorted(allowed_schemes))

@@ -56,7 +56,15 @@ def _venue_dict(v: Venue) -> dict[str, Any]:
         "timezone": v.timezone,
         "operating_hours_json": v.operating_hours_json,
         "allow_host_camera_view": v.allow_host_camera_view,
+        "allow_host_menu_availability": v.allow_host_menu_availability,
         "guests_per_server_ratio": v.guests_per_server_ratio,
+        "currency_code": v.currency_code,
+        "menu_public_enabled": v.menu_public_enabled,
+        "show_unavailable_items_public": v.show_unavailable_items_public,
+        "menu_tagline": v.menu_tagline,
+        "logo_storage_key": v.logo_storage_key,
+        "menu_revision": v.menu_revision,
+        "qr_grace_days": v.qr_grace_days,
         "created_at": v.created_at.isoformat(),
     }
 
@@ -412,7 +420,9 @@ async def delete_camera(
     return success_response({"deleted": True, "camera_id": str(camera_id)})
 
 
-def _read_camera_frame_sync(stream_type: str, raw_url: str, fallback_demo_path: str) -> tuple[bool, Any]:
+def _read_camera_frame_sync(
+    stream_type: str, raw_url: str, fallback_demo_path: str
+) -> tuple[bool, Any]:
     if stream_type == "DEMO_MP4":
         demo_root = Path(fallback_demo_path).resolve().parent
         demo_path = Path(fallback_demo_path)
@@ -446,7 +456,10 @@ def _apply_exclusions_and_blur(frame: Any, exclusion_zones: list[Any] | None) ->
         if isinstance(zone, list) and len(zone) >= 3:
             pts = np.array(
                 [
-                    [int(max(0, min(w - 1, float(p["x"]) * w))), int(max(0, min(h - 1, float(p["y"]) * h)))]
+                    [
+                        int(max(0, min(w - 1, float(p["x"]) * w))),
+                        int(max(0, min(h - 1, float(p["y"]) * h))),
+                    ]
                     for p in zone
                     if isinstance(p, dict) and "x" in p and "y" in p
                 ],
@@ -457,9 +470,7 @@ def _apply_exclusions_and_blur(frame: Any, exclusion_zones: list[Any] | None) ->
     return blur_faces_in_bgr(out)
 
 
-async def _capture_camera_preview(
-    cam: Camera, db: AsyncSession
-) -> JSONResponse:
+async def _capture_camera_preview(cam: Camera, db: AsyncSession) -> JSONResponse:
     raw_url = decrypt_field(cam.stream_url_encrypted)
     if cam.stream_type != "DEMO_MP4":
         validate_camera_stream_url(raw_url, cam.stream_type)
@@ -913,7 +924,9 @@ async def stream_live_mjpeg(
 ) -> StreamingResponse:
     """High-FPS (up to 60 FPS) face-blurred MJPEG live stream authorized via short-lived stream token."""
     claims = verify_stream_token(token)
-    if str(claims.get("camera_id")) != str(camera_id) or str(claims.get("venue_id")) != str(venue_id):
+    if str(claims.get("camera_id")) != str(camera_id) or str(claims.get("venue_id")) != str(
+        venue_id
+    ):
         raise AppError(403, "AUTH_FORBIDDEN", "Stream token does not match requested camera")
 
     cam = (
@@ -965,7 +978,9 @@ async def mediamtx_auth_hook(body: MediaAuthHookRequest) -> JSONResponse:
         raise AppError(403, "AUTH_FORBIDDEN", "Stream token not valid for requested action")
     expected_path = f"cam-{claims['camera_id']}"
     clean_path = body.path.strip("/")
-    if not clean_path or (clean_path != expected_path and not clean_path.startswith(f"{expected_path}/")):
+    if not clean_path or (
+        clean_path != expected_path and not clean_path.startswith(f"{expected_path}/")
+    ):
         raise AppError(403, "AUTH_FORBIDDEN", "Stream token does not match requested camera path")
 
     return success_response({"authorized": True, "camera_id": claims["camera_id"]})
@@ -995,7 +1010,9 @@ async def list_internal_cv_cameras(
     for org_id, enabled in org_ai.items():
         await set_kill_switch_cache(str(org_id), enabled)
 
-    rules_rows = (await db.execute(select(AlertRule).where(AlertRule.deleted_at.is_(None)))).scalars().all()
+    rules_rows = (
+        (await db.execute(select(AlertRule).where(AlertRule.deleted_at.is_(None)))).scalars().all()
+    )
     venue_rules: dict[uuid.UUID, AlertRule] = {}
     for r in rules_rows:
         if r.section_name is None or r.venue_id not in venue_rules:
@@ -1006,6 +1023,9 @@ async def list_internal_cv_cameras(
             await db.execute(
                 select(DiningTable).where(
                     DiningTable.deleted_at.is_(None),
+                    DiningTable.is_active.is_(True),
+                    DiningTable.camera_id.is_not(None),
+                    DiningTable.polygon_json.is_not(None),
                 )
             )
         )
@@ -1014,7 +1034,7 @@ async def list_internal_cv_cameras(
     )
     tables_by_cam: dict[uuid.UUID, list[DiningTable]] = {}
     for t in tables_rows:
-        if t.camera_id is not None:
+        if t.camera_id is not None and t.polygon_json and len(t.polygon_json) >= 3:
             tables_by_cam.setdefault(t.camera_id, []).append(t)
 
     payload_cams: list[dict[str, Any]] = []
@@ -1045,7 +1065,9 @@ async def list_internal_cv_cameras(
                             "occupancy_debounce_sec": rule.occupancy_debounce_sec if rule else 10,
                             "departure_debounce_sec": rule.departure_debounce_sec if rule else 20,
                             "unattended_service_sec": rule.unattended_service_sec if rule else 300,
-                            "cleaning_alert_delay_sec": rule.cleaning_alert_delay_sec if rule else 120,
+                            "cleaning_alert_delay_sec": rule.cleaning_alert_delay_sec
+                            if rule
+                            else 120,
                             "min_confidence": rule.min_confidence if rule else 0.65,
                             "require_bussing_confirmation": (
                                 rule.require_bussing_confirmation if rule else False

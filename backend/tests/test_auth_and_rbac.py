@@ -297,7 +297,9 @@ async def test_rbac_all_five_roles_invites_and_last_owner_protection(
 
 
 @pytest.mark.asyncio
-async def test_ws_ticket_and_policy_completeness_and_log_scrubber(client: AsyncClient) -> None:
+async def test_ws_ticket_and_policy_completeness_and_log_scrubber(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     token, _ = await _bootstrap(client)
     assert (await client.post("/api/v1/auth/ws-ticket")).status_code == 401
     ok_ticket = await client.post(
@@ -336,6 +338,37 @@ async def test_ws_ticket_and_policy_completeness_and_log_scrubber(client: AsyncC
         assert any(getattr(d.call, "_tp_rbac_protected", False) for d in deps), (
             f"Unprotected API route missing RBAC dependency: {path}"
         )
+
+    # Fail-closed Phase 2 flags (missing => False) + extended matrix check
+    for env_key in (
+        "TABLE_ADVANCED_ENABLED",
+        "QR_ENABLED",
+        "PUBLIC_MENU_ENABLED",
+        "MENU_IMAGES_ENABLED",
+    ):
+        monkeypatch.delenv(env_key, raising=False)
+    from app.config import _parse_bool_env, get_settings
+    from app.core.rbac import load_rbac_matrix
+
+    get_settings.cache_clear()
+
+    assert _parse_bool_env("TABLE_ADVANCED_ENABLED", False) is False
+    assert _parse_bool_env("QR_ENABLED", False) is False
+    assert _parse_bool_env("PUBLIC_MENU_ENABLED", False) is False
+    assert _parse_bool_env("MENU_IMAGES_ENABLED", False) is False
+    load_rbac_matrix.cache_clear()
+    caps = load_rbac_matrix()["capabilities"]
+    for p2_cap in (
+        "tables.read",
+        "tables.manage",
+        "menu.read",
+        "menu.manage",
+        "menu.availability",
+        "menu.currency_manage",
+        "qr.read",
+        "qr.manage",
+    ):
+        assert p2_cap in caps
 
     # Log scrubber canary test (docs/08 §10)
     canary = scrub_mapping(

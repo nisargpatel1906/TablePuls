@@ -115,17 +115,16 @@ export default function PolygonEditorCanvas({
           ))}
 
           {tables.map((tbl, idx) => {
+            const pts = tbl.polygon_json ?? [];
             const isSel = idx === selectedIndex;
-            const flatPts = tbl.polygon_json.flatMap((p) => [p.x * size.width, p.y * size.height]);
+            const flatPts = pts.flatMap((p) => [p.x * size.width, p.y * size.height]);
             const cx =
-              tbl.polygon_json.length > 0
-                ? (tbl.polygon_json.reduce((a, p) => a + p.x, 0) / tbl.polygon_json.length) *
-                  size.width
+              pts.length > 0
+                ? (pts.reduce((a, p) => a + p.x, 0) / pts.length) * size.width
                 : 40;
             const cy =
-              tbl.polygon_json.length > 0
-                ? (tbl.polygon_json.reduce((a, p) => a + p.y, 0) / tbl.polygon_json.length) *
-                  size.height
+              pts.length > 0
+                ? (pts.reduce((a, p) => a + p.y, 0) / pts.length) * size.height
                 : 40;
 
             return (
@@ -151,7 +150,7 @@ export default function PolygonEditorCanvas({
                 />
                 {mode === "edit" &&
                   isSel &&
-                  tbl.polygon_json.map((pt, vIdx) => (
+                  pts.map((pt, vIdx) => (
                     <Circle
                       key={`v-${idx}-${vIdx}`}
                       x={pt.x * size.width}

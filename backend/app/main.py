@@ -85,7 +85,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    is_prod = settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
+    is_prod = (
+        settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
+    )
     app = FastAPI(
         title="TablePulse API",
         version="1.0.0",

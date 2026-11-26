@@ -128,6 +128,9 @@ def _run_camera_loop(proc: CameraProcessor, stop_flag: threading.Event | None = 
 def _parse_camera_config(raw: dict[str, Any]) -> CameraPipelineConfig:
     tables: list[TableROI] = []
     for t in raw.get("tables", []):
+        poly = list(t.get("polygon_json") or [])
+        if len(poly) < 3:
+            continue
         r = t.get("rules", {})
         tables.append(
             TableROI(
@@ -135,7 +138,7 @@ def _parse_camera_config(raw: dict[str, Any]) -> CameraPipelineConfig:
                 table_code=str(t["table_code"]),
                 venue_id=str(t["venue_id"]),
                 organization_id=str(t["organization_id"]),
-                polygon=list(t.get("polygon_json", [])),
+                polygon=poly,
                 rules=TableRuleConfig(
                     occupancy_debounce_sec=float(r.get("occupancy_debounce_sec", 10)),
                     departure_debounce_sec=float(r.get("departure_debounce_sec", 20)),

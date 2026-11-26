@@ -60,7 +60,9 @@ _local_ws_tickets: dict[str, dict[str, str]] = {}
 
 def _is_prod_env() -> bool:
     settings = get_settings()
-    return settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
+    return (
+        settings.app_env.lower() == "production" or settings.tablepulse_env.lower() == "production"
+    )
 
 
 def _client_ip(request: Request) -> str:
@@ -752,7 +754,9 @@ async def accept_invite(
 ) -> JSONResponse:
     """Complete account creation from an invite token and log user in."""
     client_ip = _client_ip(request)
-    ip_ok, ip_retry = await check_rate_limit(f"accept-invite:ip:{client_ip}", 15, 60, fail_closed=True)
+    ip_ok, ip_retry = await check_rate_limit(
+        f"accept-invite:ip:{client_ip}", 15, 60, fail_closed=True
+    )
     if not ip_ok:
         raise AppError(
             429,
@@ -889,6 +893,14 @@ async def get_me(
                     "name": v.name,
                     "timezone": v.timezone,
                     "allow_host_camera_view": v.allow_host_camera_view,
+                    "allow_host_menu_availability": v.allow_host_menu_availability,
+                    "currency_code": v.currency_code,
+                    "menu_public_enabled": v.menu_public_enabled,
+                    "show_unavailable_items_public": v.show_unavailable_items_public,
+                    "menu_tagline": v.menu_tagline,
+                    "logo_storage_key": v.logo_storage_key,
+                    "menu_revision": v.menu_revision,
+                    "qr_grace_days": v.qr_grace_days,
                 }
                 for v in venues
             ],

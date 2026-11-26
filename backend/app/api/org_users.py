@@ -323,7 +323,9 @@ async def revoke_user_sessions(
         raise AppError(404, "RESOURCE_NOT_FOUND", "User not found")
     if actor.role == Role.MANAGER:
         if target.role in {"OWNER", "MANAGER"}:
-            raise AppError(403, "AUTH_FORBIDDEN", "Managers cannot revoke OWNER or MANAGER sessions")
+            raise AppError(
+                403, "AUTH_FORBIDDEN", "Managers cannot revoke OWNER or MANAGER sessions"
+            )
         mgr_venues = set(actor.assigned_venue_ids or [])
         if not set(target.assigned_venue_ids or []).intersection(mgr_venues):
             raise AppError(403, "AUTH_FORBIDDEN", "User outside manager venue scope")

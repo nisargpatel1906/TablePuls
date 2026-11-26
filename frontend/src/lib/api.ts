@@ -15,7 +15,15 @@ export interface VenueSummary {
   name: string;
   timezone: string;
   allow_host_camera_view: boolean;
+  allow_host_menu_availability?: boolean;
   guests_per_server_ratio?: number;
+  currency_code?: string;
+  menu_public_enabled?: boolean;
+  show_unavailable_items_public?: boolean;
+  menu_tagline?: string | null;
+  logo_storage_key?: string | null;
+  menu_revision?: number;
+  qr_grace_days?: number;
 }
 
 export class ApiError extends Error {

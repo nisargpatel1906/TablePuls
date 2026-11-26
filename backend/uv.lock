@@ -1116,6 +1116,19 @@ wheels = [
 ]
 
 [[package]]
+name = "reportlab"
+version = "5.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "charset-normalizer" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/b8/9fa1c49fbc6fb9f4c9f2445123af346792b7fef220152004b13ec51b37ee/reportlab-5.1.2.tar.gz", hash = "sha256:2d2785281fc435e39fb33eee7f8c10b10ffee626dad9de360310390aacaf2f38", size = 3794521, upload-time = "2026-11-25T16:08:24.398Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/bb/603afbaa72589bd9519bef5d631c099407a6853465814e6a22b77a7b12d3/reportlab-5.1.2-py3-none-any.whl", hash = "sha256:8ec602de18aff4db94f3b5846f877e66edbcb42969c4100b2ae5dd69a7f3e84e", size = 2017267, upload-time = "2026-11-25T16:07:57.882Z" },
+]
+
+[[package]]
 name = "requests"
 version = "2.34.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1166,6 +1179,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2e/09/28329441dfa2c463e2d377a69d4ebbe4d51665e9dbd49fb421f3bc80d775/ruff-0.17.6-py3-none-win32.whl", hash = "sha256:c2f4af6670b7a0501904e881bb3f1f24bd0d964dec1eedbd85f0eb73786e1128", size = 9966266, upload-time = "2026-11-19T15:56:21.581Z" },
     { url = "https://files.pythonhosted.org/packages/4b/9d/18ba9730addfc7554c70d6f171fb8dc2c08e774d9fb2b98e7946ef845c59/ruff-0.17.6-py3-none-win_amd64.whl", hash = "sha256:9cd2fd9923e9806b8b6b67a3469e2258e84bd4d21e45d5a1a690afdfb9c8e57d", size = 10365847, upload-time = "2026-11-19T15:56:23.582Z" },
     { url = "https://files.pythonhosted.org/packages/70/8a/59c33e2a64a4f9672f7f842a0dc522915cfbbaffd13d37d0cec57d1c5c5d/ruff-0.17.6-py3-none-win_arm64.whl", hash = "sha256:d8b14e1473dc86ab9069cf7a2ba5041dc012f59110201844ed04cfddf07055a0", size = 9926224, upload-time = "2026-11-19T15:56:25.269Z" },
+]
+
+[[package]]
+name = "segno"
+version = "1.6.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/2e/b396f750c53f570055bf5a9fc1ace09bed2dff013c73b7afec5702a581ba/segno-1.6.6.tar.gz", hash = "sha256:e60933afc4b52137d323a4434c8340e0ce1e58cec71439e46680d4db188f11b3", size = 1628586, upload-time = "2025-03-12T22:12:53.324Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/02/12c73fd423eb9577b97fc1924966b929eff7074ae6b2e15dd3d30cb9e4ae/segno-1.6.6-py3-none-any.whl", hash = "sha256:28c7d081ed0cf935e0411293a465efd4d500704072cdb039778a2ab8736190c7", size = 76503, upload-time = "2025-03-12T22:12:48.106Z" },
 ]
 
 [[package]]
@@ -1257,6 +1279,8 @@ dependencies = [
     { name = "pyotp" },
     { name = "python-multipart" },
     { name = "pyyaml" },
+    { name = "reportlab" },
+    { name = "segno" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
     { name = "typer" },
@@ -1276,6 +1300,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "types-pyyaml" },
+    { name = "zxing-cpp" },
 ]
 
 [package.metadata]
@@ -1304,7 +1329,9 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = "==7.1.0" },
     { name = "python-multipart", specifier = "==0.0.34" },
     { name = "pyyaml", specifier = "==6.0.4" },
+    { name = "reportlab", specifier = "==5.1.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.17.6" },
+    { name = "segno", specifier = "==1.6.6" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.1.9" },
     { name = "structlog", specifier = "==26.1.0" },
     { name = "typer", specifier = "==0.29.2" },
@@ -1312,6 +1339,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = "==0.54.0" },
     { name = "valkey", specifier = "==6.2.0" },
     { name = "zxcvbn", specifier = "==4.5.0" },
+    { name = "zxing-cpp", marker = "extra == 'dev'", specifier = "==3.2.0.post1" },
 ]
 provides-extras = ["dev"]
 
@@ -1530,4 +1558,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ae/40/9366940b1484fd4e9423c8decbbf34a73bf52badb36281e082fe02b57aca/zxcvbn-4.5.0.tar.gz", hash = "sha256:70392c0fff39459d7f55d0211151401e79e76fcc6e2c22b61add62900359c7c1", size = 411249, upload-time = "2025-02-19T19:03:02.699Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/16/7410f8e714a109d43d17f4e27c8eabb351557653a9b570db1bd7dfdfd822/zxcvbn-4.5.0-py2.py3-none-any.whl", hash = "sha256:2b6eed621612ce6d65e6e4c7455b966acee87d0280e257956b1f06ccc66bd5ff", size = 409397, upload-time = "2025-02-19T19:03:00.521Z" },
+]
+
+[[package]]
+name = "zxing-cpp"
+version = "3.2.0.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/df/d4ca3cdd0d6846045713e46d4012589ad7476b3dc58fcb217f852e228ed1/zxing_cpp-3.2.0.post1.tar.gz", hash = "sha256:3100a9abf498eeca4f271c7033ea66ed3e936983ed4bf8ace72a3e1efd2062de", size = 1446246, upload-time = "2026-11-26T10:05:23.919Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/ec/5a6814a853383d73a26c4e8bd4e76fb3454bee84b2db3de0f72b72258437/zxing_cpp-3.2.0.post1-cp312-abi3-macosx_10_13_x86_64.whl", hash = "sha256:4eb8935f8c7126fbc9769acc0588ee29c6c07d2521dddf434283a9b14c602903", size = 930384, upload-time = "2026-11-26T10:04:55.194Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/0c/20c2740238a391f762b47570901b3321804b56be4744dfef7c755ae7c163/zxing_cpp-3.2.0.post1-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:bc36d9681e22145250b9eb4867b6223a6c3162b772ea5c3c75c97cd2dc8b17c0", size = 885207, upload-time = "2026-11-26T10:04:56.522Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/9b/7d26c18839c10ca6c6590bc7a03235417a9388a4f912772eb8f5fbeedd8b/zxing_cpp-3.2.0.post1-cp312-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:56feb9680239e41cc066930142ff7b1ec25ff0eedfd081d999efba212a28c84d", size = 1032540, upload-time = "2026-11-26T10:04:57.953Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/15/09782c2d25eaeed3de551adbaf03bf748fb932c3b4b3bb67c70f8e28fb60/zxing_cpp-3.2.0.post1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:580c019d79399edf7f5f066aa9b87624d83e08bf110a098d39fd270dc762a753", size = 1114138, upload-time = "2026-11-26T10:04:59.448Z" },
+    { url = "https://files.pythonhosted.org/packages/68/32/d766f90d188b11d53610bd3ab5d7e4b30b17bceeb397e40cad5d8c316429/zxing_cpp-3.2.0.post1-cp312-abi3-win_amd64.whl", hash = "sha256:b516f8d8c585e8494e9e86a20fd7ed50465f2440147be2d13361857e2db7d403", size = 1207281, upload-time = "2026-11-26T10:05:01.026Z" },
+    { url = "https://files.pythonhosted.org/packages/63/7c/b08987b722585d9e5fb852f97717b8952d4da8aea06e4eb224c58472d0f2/zxing_cpp-3.2.0.post1-cp312-abi3-win_arm64.whl", hash = "sha256:db65e2041e469ed44ca8ab0f1533e0fbfe54eb5e442caeea656d962cbfe16320", size = 1327917, upload-time = "2026-11-26T10:05:02.484Z" },
 ]

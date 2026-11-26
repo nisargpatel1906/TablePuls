@@ -38,17 +38,26 @@ router = APIRouter(tags=["floor-ops"])
 
 
 def _table_dict(t: DiningTable) -> dict[str, Any]:
+    is_monitored = bool(
+        t.camera_id is not None and t.polygon_json is not None and len(t.polygon_json) >= 3
+    )
     return {
         "id": str(t.id),
         "venue_id": str(t.venue_id),
         "camera_id": str(t.camera_id) if t.camera_id else None,
         "table_code": t.table_code,
+        "display_name": t.display_name,
         "section_name": t.section_name,
+        "min_capacity": t.min_capacity,
         "seat_capacity": t.seat_capacity,
-        "polygon_json": t.polygon_json,
+        "polygon_json": t.polygon_json or [],
         "floor_x": t.floor_x,
         "floor_y": t.floor_y,
         "shape": t.shape,
+        "is_active": t.is_active,
+        "is_combinable": t.is_combinable,
+        "sort_order": t.sort_order,
+        "is_monitored": is_monitored,
         "current_state": t.current_state,
         "current_guest_count": t.current_guest_count,
         "current_confidence": t.current_confidence,
@@ -87,8 +96,9 @@ async def build_floor_snapshot(
                     DiningTable.venue_id == venue_id,
                     DiningTable.organization_id == org_id,
                     DiningTable.deleted_at.is_(None),
+                    DiningTable.is_active.is_(True),
                 )
-                .order_by(DiningTable.table_code.asc())
+                .order_by(DiningTable.sort_order.asc(), DiningTable.table_code.asc())
             )
         )
         .scalars()
@@ -122,11 +132,22 @@ async def build_floor_snapshot(
         await db.execute(select(SystemSetting).where(SystemSetting.organization_id == org_id))
     ).scalar_one_or_none()
 
-    total_tables = len(tables)
-    occupied_tables = sum(1 for t in tables if t.current_state in {"OCCUPIED", "NEEDS_SERVICE"})
-    total_seats = sum(t.seat_capacity for t in tables)
+    monitored_tables = [
+        t
+        for t in tables
+        if t.camera_id is not None and t.polygon_json is not None and len(t.polygon_json) >= 3
+    ]
+    unmonitored_tables = [t for t in tables if t not in monitored_tables]
+
+    total_tables = len(monitored_tables)
+    occupied_tables = sum(
+        1 for t in monitored_tables if t.current_state in {"OCCUPIED", "NEEDS_SERVICE"}
+    )
+    total_seats = sum(t.seat_capacity for t in monitored_tables)
     seated_guests = sum(
-        t.current_guest_count for t in tables if t.current_state in {"OCCUPIED", "NEEDS_SERVICE"}
+        t.current_guest_count
+        for t in monitored_tables
+        if t.current_state in {"OCCUPIED", "NEEDS_SERVICE"}
     )
     capacity_pct = round((seated_guests / total_seats) * 100.0, 1) if total_seats > 0 else 0.0
 
@@ -146,7 +167,8 @@ async def build_floor_snapshot(
             "online": sum(1 for c in cams if c.status == "ONLINE"),
             "offline": sum(1 for c in cams if c.status == "OFFLINE"),
         },
-        "tables": [_table_dict(t) for t in tables],
+        "tables": [_table_dict(t) for t in monitored_tables],
+        "unmonitored_tables": [_table_dict(t) for t in unmonitored_tables],
     }
 
 
@@ -542,11 +564,7 @@ async def list_alerts(
     total = int((await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one())
     offset = (page - 1) * page_size
     rows = (
-        (
-            await db.execute(
-                q.order_by(Alert.created_at.desc()).offset(offset).limit(page_size)
-            )
-        )
+        (await db.execute(q.order_by(Alert.created_at.desc()).offset(offset).limit(page_size)))
         .scalars()
         .all()
     )
