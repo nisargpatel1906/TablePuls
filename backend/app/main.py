@@ -21,6 +21,7 @@ from app.api.admin_ops import router as admin_ops_router
 from app.api.auth import router as auth_router
 from app.api.floor_ops import router as floor_ops_router
 from app.api.org_users import router as org_users_router
+from app.api.tables_admin import router as tables_admin_router
 from app.api.venues_cameras import router as venues_cameras_router
 from app.api.waitlist_analytics import router as waitlist_analytics_router
 from app.config import get_settings
@@ -148,6 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(org_users_router)
     app.include_router(venues_cameras_router)
+    app.include_router(tables_admin_router)
     app.include_router(floor_ops_router)
     app.include_router(waitlist_analytics_router)
     app.include_router(admin_ops_router)

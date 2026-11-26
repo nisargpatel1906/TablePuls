@@ -13,6 +13,8 @@ from app.config import get_settings
 _client: Valkey | None = None
 _local_rate_limits: dict[str, list[float]] = {}
 _local_revocations: dict[str, int] = {}
+_local_public_menu_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_local_public_qr_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def get_valkey() -> Valkey:
@@ -147,3 +149,41 @@ async def check_and_store_idempotency(
     except Exception:
         return None
     return None
+
+
+async def cache_get_json(key: str) -> dict[str, Any] | None:
+    try:
+        raw = await get_valkey().get(key)
+        if raw:
+            return dict(json.loads(raw))
+    except Exception:
+        pass
+    return None
+
+
+async def cache_set_json(key: str, value: dict[str, Any], ttl_seconds: int) -> None:
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        await get_valkey().set(key, json.dumps(value), ex=ttl_seconds)
+
+
+async def evict_public_qr_cache(token: str) -> None:
+    import contextlib
+
+    _local_public_qr_cache.pop(token, None)
+    with contextlib.suppress(Exception):
+        await get_valkey().delete(f"tp:pub:qr:{token}")
+
+
+async def evict_public_menu_cache(venue_id: str) -> None:
+    import contextlib
+
+    for k in [k for k in _local_public_menu_cache if k.startswith(f"{venue_id}:")]:
+        _local_public_menu_cache.pop(k, None)
+    with contextlib.suppress(Exception):
+        client = get_valkey()
+        await client.delete(f"tp:pub:menu:{venue_id}", f"tp:pub:menu:latest:{venue_id}")
+        keys = await client.keys(f"tp:pub:menu:{venue_id}:*")
+        if keys:
+            await client.delete(*keys)

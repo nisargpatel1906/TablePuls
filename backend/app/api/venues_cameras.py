@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import secrets
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -34,7 +35,7 @@ from app.core.security import (
 from app.core.ssrf import mask_stream_url, validate_camera_stream_url
 from app.core.valkey_client import publish_cv_control, set_kill_switch_cache
 from app.db.base import get_db, uuid7
-from app.db.models import AlertRule, Camera, DiningTable, SystemSetting, Venue
+from app.db.models import AlertRule, Camera, DiningTable, SystemSetting, TableQRCode, Venue
 from app.schemas.venues_cameras import (
     BulkPolygonsRequest,
     CreateCameraRequest,
@@ -609,6 +610,24 @@ async def get_polygons(
         .all()
     )
 
+    unassigned = (
+        (
+            await db.execute(
+                select(DiningTable)
+                .where(
+                    DiningTable.venue_id == venue_id,
+                    DiningTable.organization_id == actor.organization_id,
+                    DiningTable.deleted_at.is_(None),
+                    DiningTable.is_active.is_(True),
+                    DiningTable.camera_id.is_(None),
+                )
+                .order_by(DiningTable.sort_order.asc(), DiningTable.table_code.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return success_response(
         {
             "camera_id": str(camera_id),
@@ -617,6 +636,7 @@ async def get_polygons(
                 {
                     "id": str(t.id),
                     "table_code": t.table_code,
+                    "display_name": t.display_name,
                     "section_name": t.section_name,
                     "seat_capacity": t.seat_capacity,
                     "polygon_json": t.polygon_json,
@@ -626,6 +646,20 @@ async def get_polygons(
                     "version": t.version,
                 }
                 for t in tables
+            ],
+            "unassigned_tables": [
+                {
+                    "id": str(t.id),
+                    "table_code": t.table_code,
+                    "display_name": t.display_name,
+                    "section_name": t.section_name,
+                    "seat_capacity": t.seat_capacity,
+                    "floor_x": t.floor_x,
+                    "floor_y": t.floor_y,
+                    "shape": t.shape,
+                    "version": t.version,
+                }
+                for t in unassigned
             ],
         }
     )
@@ -759,6 +793,18 @@ async def save_polygons(
                 shape=tbl.shape,
             )
             db.add(row)
+            await db.flush()
+            db.add(
+                TableQRCode(
+                    id=uuid7(),
+                    organization_id=actor.organization_id,
+                    venue_id=venue_id,
+                    table_id=row.id,
+                    token=secrets.token_urlsafe(16),
+                    status="ACTIVE",
+                    created_by=actor.id,
+                )
+            )
             saved_tables.append(row)
 
     cam.exclusion_polygons_json = [
