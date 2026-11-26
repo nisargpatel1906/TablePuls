@@ -143,17 +143,21 @@ export default function FloorCanvas({
             };
             const isSelected = tbl.id === selectedTableId;
             const dash =
-              tbl.current_state === "NEEDS_CLEANING" || tbl.current_state === "UNKNOWN"
-                ? [8, 5]
-                : tbl.current_state === "RESERVED"
-                  ? [3, 4]
-                  : undefined;
+              tbl.is_monitored === false
+                ? [5, 5]
+                : tbl.current_state === "NEEDS_CLEANING" || tbl.current_state === "UNKNOWN"
+                  ? [8, 5]
+                  : tbl.current_state === "RESERVED"
+                    ? [3, 4]
+                    : undefined;
 
             const dwell =
-              tbl.occupied_since &&
-              (tbl.current_state === "OCCUPIED" || tbl.current_state === "NEEDS_SERVICE")
-                ? formatElapsed(tbl.occupied_since, nowMs)
-                : "";
+              tbl.is_monitored === false
+                ? "Manual Mode"
+                : tbl.occupied_since &&
+                    (tbl.current_state === "OCCUPIED" || tbl.current_state === "NEEDS_SERVICE")
+                  ? formatElapsed(tbl.occupied_since, nowMs)
+                  : "";
 
             const cardWidth = tbl.shape === "BOOTH" ? 132 : 114;
             const textWidth = cardWidth - 16;

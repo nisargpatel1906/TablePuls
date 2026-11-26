@@ -69,7 +69,20 @@ export default function PolygonCalibrationPage() {
   const { user, loading: authLoading } = useAuth();
   const canCalibrate = hasCapability(user?.role, "polygons.calibrate");
 
+  interface UnassignedTableOption {
+    id: string;
+    table_code: string;
+    display_name?: string | null;
+    section_name: string;
+    seat_capacity: number;
+    floor_x: number;
+    floor_y: number;
+    shape: string;
+    version: number;
+  }
+
   const [tables, setTables] = useState<CalibrationTable[]>([]);
+  const [unassignedTables, setUnassignedTables] = useState<UnassignedTableOption[]>([]);
   const [exclusionZones, setExclusionZones] = useState<PolygonPoint[][]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [previewBase64, setPreviewBase64] = useState<string | null>(null);
@@ -94,8 +107,10 @@ export default function PolygonCalibrationPage() {
       const polyRes = await apiFetch<{
         exclusion_polygons_json: PolygonPoint[][];
         tables: CalibrationTable[];
+        unassigned_tables?: UnassignedTableOption[];
       }>(`/api/v1/venues/${venueId}/cameras/${cameraId}/polygons`);
       setTables(roundTables(polyRes.tables));
+      setUnassignedTables(polyRes.unassigned_tables || []);
       setExclusionZones(polyRes.exclusion_polygons_json || []);
 
       try {
@@ -172,6 +187,31 @@ export default function PolygonCalibrationPage() {
     };
     setTables((prev) => [...prev, nextTbl]);
     setSelectedIndex(tables.length);
+  }
+
+  function bindUnassignedTable(u: UnassignedTableOption) {
+    const offset = (tables.length % 4) * 0.16;
+    const x0 = Math.min(0.7, 0.1 + offset);
+    const nextTbl: CalibrationTable = {
+      id: u.id,
+      table_code: u.table_code,
+      section_name: u.section_name,
+      seat_capacity: u.seat_capacity,
+      polygon_json: [
+        { x: x0, y: 0.18 },
+        { x: Math.min(0.95, x0 + 0.18), y: 0.18 },
+        { x: Math.min(0.95, x0 + 0.18), y: 0.42 },
+        { x: x0, y: 0.42 },
+      ],
+      floor_x: u.floor_x > 0 ? u.floor_x : Math.round(Math.min(0.9, x0 + 0.09) * 1000) / 1000,
+      floor_y: u.floor_y > 0 ? u.floor_y : 0.3,
+      shape: u.shape || "RECT",
+      version: u.version,
+    };
+    setTables((prev) => [...prev, nextTbl]);
+    setUnassignedTables((prev) => prev.filter((x) => x.id !== u.id));
+    setSelectedIndex(tables.length);
+    setSuccessMsg(`Bound unmapped table ${u.table_code} onto this camera. Click Save Calibration to persist.`);
   }
 
   async function handleSave() {
@@ -512,6 +552,32 @@ export default function PolygonCalibrationPage() {
                     Delete Polygon
                   </button>
                 </>
+              )}
+
+              {unassignedTables.length > 0 && (
+                <div className="space-y-2 border-t border-[var(--border-subtle)] pt-3">
+                  <p className="text-xs font-bold text-[var(--text-secondary)]">
+                    Unmapped Tables ({unassignedTables.length})
+                  </p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Bind a standalone table to start tracking occupancy from this camera.
+                  </p>
+                  <div className="flex max-h-36 flex-col gap-1.5 overflow-y-auto">
+                    {unassignedTables.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => bindUnassignedTable(u)}
+                        className="flex items-center justify-between rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-left text-xs hover:border-[var(--accent-primary)]"
+                      >
+                        <span className="font-semibold">
+                          {u.table_code} ({u.section_name})
+                        </span>
+                        <span className="text-[11px] text-[var(--accent-primary)]">+ Bind</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </aside>
           </div>

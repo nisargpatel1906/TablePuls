@@ -61,17 +61,22 @@ export default function LiveFloorPage() {
     return () => window.clearInterval(t);
   }, []);
 
+  const allFloorTables = useMemo(
+    () => [...(snapshot?.tables || []), ...(snapshot?.unmonitored_tables || [])],
+    [snapshot],
+  );
+
   const sections = useMemo(() => {
     const s = new Set<string>();
-    for (const tbl of snapshot?.tables || []) {
+    for (const tbl of allFloorTables) {
       s.add(tbl.section_name);
     }
     return ["ALL", ...Array.from(s).sort()];
-  }, [snapshot]);
+  }, [allFloorTables]);
 
   const filteredTables = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return (snapshot?.tables || []).filter((tbl) => {
+    return allFloorTables.filter((tbl) => {
       if (sectionFilter !== "ALL" && tbl.section_name !== sectionFilter) return false;
       if (stateFilter !== "ALL" && tbl.current_state !== stateFilter) return false;
       if (q && !tbl.table_code.toLowerCase().includes(q) && !tbl.section_name.toLowerCase().includes(q)) {
@@ -79,14 +84,14 @@ export default function LiveFloorPage() {
       }
       return true;
     });
-  }, [snapshot, sectionFilter, stateFilter, searchQuery]);
+  }, [allFloorTables, sectionFilter, stateFilter, searchQuery]);
 
   const needsActionCount = useMemo(
     () =>
-      (snapshot?.tables || []).filter(
+      allFloorTables.filter(
         (t) => t.current_state === "NEEDS_SERVICE" || t.current_state === "NEEDS_CLEANING",
       ).length,
-    [snapshot],
+    [allFloorTables],
   );
 
   const occupiedSummary = snapshot
@@ -270,22 +275,30 @@ export default function LiveFloorPage() {
           </div>
         )}
 
-        {snapshot && snapshot.tables.length === 0 && (
+        {snapshot && allFloorTables.length === 0 && (
           <div className="tp-glass rounded-xl border p-8 text-center">
             <h2 className="text-base font-bold">No tables calibrated yet</h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              Add a camera and draw table polygons to begin live occupancy tracking.
+              Add a camera and draw table polygons to begin live occupancy tracking, or add standalone tables.
             </p>
-            <Link
-              href={`/venues/${venueId}/settings/cameras`}
-              className="mt-4 inline-block rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
-            >
-              Configure Cameras & Calibration
-            </Link>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Link
+                href={`/venues/${venueId}/settings/cameras`}
+                className="inline-block rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
+              >
+                Configure Cameras & Calibration
+              </Link>
+              <Link
+                href={`/venues/${venueId}/settings/tables`}
+                className="inline-block rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-4 py-2 text-xs font-semibold"
+              >
+                Manage Tables
+              </Link>
+            </div>
           </div>
         )}
 
-        {snapshot && snapshot.tables.length > 0 && (
+        {snapshot && allFloorTables.length > 0 && (
           <div
             className={`grid grid-cols-1 gap-4 items-start ${
               selectedTableId ? "lg:grid-cols-[1fr_360px]" : ""
@@ -319,7 +332,14 @@ export default function LiveFloorPage() {
                           className="cursor-pointer hover:bg-[var(--surface-solid)]"
                           onClick={() => setSelectedTableId(tbl.id)}
                         >
-                          <td className="px-4 py-3 font-bold">{tbl.table_code}</td>
+                          <td className="px-4 py-3 font-bold">
+                            {tbl.table_code}
+                            {tbl.is_monitored === false && (
+                              <span className="ml-2 rounded border border-dashed border-[var(--border-subtle)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+                                {t(locale, "p2.manual_mode")}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">
                             {tbl.section_name}
                           </td>

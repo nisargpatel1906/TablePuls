@@ -47,7 +47,7 @@ export function parseDisplayToMinorUnits(raw: string, currencyCode = "INR"): num
     const val = Number.parseInt(cleaned, 10);
     return Number.isSafeInteger(val) && val >= 0 && val <= 100_000_000 ? val : null;
   }
-  const [wholeStr, fracStr = ""] = cleaned.split(".");
+  const [wholeStr = "0", fracStr = ""] = cleaned.split(".");
   const whole = Number.parseInt(wholeStr, 10);
   const frac = Number.parseInt(fracStr.padEnd(2, "0"), 10);
   const minor = whole * 100 + frac;
