@@ -179,11 +179,80 @@ async def evict_public_qr_cache(token: str) -> None:
 async def evict_public_menu_cache(venue_id: str) -> None:
     import contextlib
 
-    for k in [k for k in _local_public_menu_cache if k.startswith(f"{venue_id}:")]:
+    prefix = f"tp:pub:menu:{venue_id}:"
+    for k in [k for k in _local_public_menu_cache if k.startswith(prefix) or k == f"tp:pub:menu:{venue_id}"]:
         _local_public_menu_cache.pop(k, None)
     with contextlib.suppress(Exception):
         client = get_valkey()
-        await client.delete(f"tp:pub:menu:{venue_id}", f"tp:pub:menu:latest:{venue_id}")
+        await client.delete(f"tp:pub:menu:{venue_id}")
         keys = await client.keys(f"tp:pub:menu:{venue_id}:*")
         if keys:
             await client.delete(*keys)
+
+
+async def get_public_qr_cached(token: str) -> dict[str, Any] | None:
+    try:
+        raw = await get_valkey().get(f"tp:pub:qr:{token}")
+        return dict(json.loads(raw)) if raw else None
+    except Exception:
+        entry = _local_public_qr_cache.get(token)
+        if entry and entry[0] > time.monotonic():
+            return dict(entry[1])
+        _local_public_qr_cache.pop(token, None)
+        return None
+
+
+async def set_public_qr_cached(token: str, payload: dict[str, Any], ttl_seconds: int = 300) -> None:
+    import contextlib
+
+    if len(_local_public_qr_cache) > 512:
+        _local_public_qr_cache.clear()
+    _local_public_qr_cache[token] = (time.monotonic() + ttl_seconds, dict(payload))
+    with contextlib.suppress(Exception):
+        await get_valkey().set(f"tp:pub:qr:{token}", json.dumps(payload), ex=ttl_seconds)
+
+
+async def get_public_menu_cached(cache_key: str) -> dict[str, Any] | None:
+    try:
+        raw = await get_valkey().get(cache_key)
+        return dict(json.loads(raw)) if raw else None
+    except Exception:
+        entry = _local_public_menu_cache.get(cache_key)
+        if entry and entry[0] > time.monotonic():
+            return dict(entry[1])
+        _local_public_menu_cache.pop(cache_key, None)
+        return None
+
+
+async def set_public_menu_cached(
+    cache_key: str,
+    payload: dict[str, Any],
+    *,
+    ttl_seconds: int = 60,
+    latest_key: str | None = None,
+    stale_ttl_seconds: int = 86400,
+) -> None:
+    import contextlib
+
+    if len(_local_public_menu_cache) > 512:
+        _local_public_menu_cache.clear()
+    _local_public_menu_cache[cache_key] = (time.monotonic() + ttl_seconds, dict(payload))
+    if latest_key:
+        _local_public_menu_cache[latest_key] = (
+            time.monotonic() + stale_ttl_seconds,
+            dict(payload),
+        )
+    with contextlib.suppress(Exception):
+        client = get_valkey()
+        await client.set(cache_key, json.dumps(payload), ex=ttl_seconds)
+        if latest_key:
+            await client.set(latest_key, json.dumps(payload), ex=stale_ttl_seconds)
+
+
+async def claim_public_scan_debounce(dedup_key: str, ttl_seconds: int = 300) -> bool:
+    """Return True if scan should be counted (first scan in window), False if debounced."""
+    try:
+        res = await get_valkey().set(dedup_key, "1", ex=ttl_seconds, nx=True)
+        return bool(res)
+    except Exception:
+        return True

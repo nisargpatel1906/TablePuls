@@ -22,6 +22,7 @@ from app.api.auth import router as auth_router
 from app.api.floor_ops import router as floor_ops_router
 from app.api.menus_admin import router as menus_admin_router
 from app.api.org_users import router as org_users_router
+from app.api.public_menu import router as public_menu_router
 from app.api.qr_admin import expire_grace_qr_codes_once
 from app.api.qr_admin import router as qr_admin_router
 from app.api.tables_admin import router as tables_admin_router
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(tables_admin_router)
     app.include_router(menus_admin_router)
     app.include_router(qr_admin_router)
+    app.include_router(public_menu_router)
     app.include_router(floor_ops_router)
     app.include_router(waitlist_analytics_router)
     app.include_router(admin_ops_router)

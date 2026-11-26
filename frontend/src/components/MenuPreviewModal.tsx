@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ExternalLink, Moon, Smartphone, Sun, X } from "lucide-react";
+import { PublicDigitalMenu } from "@/components/PublicDigitalMenu";
 import { apiFetch, ApiError } from "@/lib/api";
 import type { AdminTableItem } from "@/types/floor";
 
@@ -15,7 +16,11 @@ interface MenuPreviewModalProps {
 export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalProps) {
   const [tables, setTables] = useState<AdminTableItem[]>([]);
   const [selectedTableId, setSelectedTableId] = useState<string>("");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewInfo, setPreviewInfo] = useState<{
+    qrToken: string;
+    previewParam: string | null;
+    fullPath: string;
+  } | null>(null);
   const [previewTheme, setPreviewTheme] = useState<"light" | "dark">("light");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +67,12 @@ export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalPro
         if (!active) return;
         const u = new URL(res.preview_url, window.location.origin);
         u.searchParams.set("theme", previewTheme);
-        setPreviewUrl(`${u.pathname}${u.search}`);
+        const tokenSeg = u.pathname.split("/").pop() || "";
+        setPreviewInfo({
+          qrToken: tokenSeg,
+          previewParam: u.searchParams.get("p"),
+          fullPath: `${u.pathname}${u.search}`,
+        });
       } catch (err) {
         if (active) setError(err instanceof ApiError ? err.message : "Failed to create preview link");
       } finally {
@@ -112,9 +122,9 @@ export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalPro
               {previewTheme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
               {previewTheme === "light" ? "Dark" : "Light"}
             </button>
-            {previewUrl && (
+            {previewInfo && (
               <a
-                href={previewUrl}
+                href={previewInfo.fullPath}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-primary)] px-2.5 py-1 text-xs font-semibold text-white"
@@ -140,16 +150,17 @@ export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalPro
               {error}
             </div>
           )}
-          {!error && loading && !previewUrl && (
+          {!error && loading && !previewInfo && (
             <p className="py-12 text-xs text-[var(--text-secondary)]">Issuing signed 15m preview URL...</p>
           )}
-          {!error && previewUrl && (
-            <iframe
-              key={previewUrl}
-              src={previewUrl}
-              title="Customer Digital Menu Live Preview"
-              className="h-[680px] w-[390px] rounded-[28px] border-4 border-slate-800 bg-white shadow-xl"
-            />
+          {!error && previewInfo && (
+            <div className="h-[680px] w-[390px] overflow-y-auto rounded-[28px] border-4 border-slate-800 shadow-xl">
+              <PublicDigitalMenu
+                qrToken={previewInfo.qrToken}
+                previewParam={previewInfo.previewParam}
+                initialTheme={previewTheme}
+              />
+            </div>
           )}
           {!error && !loading && tables.length === 0 && (
             <p className="py-12 text-xs text-[var(--text-secondary)]">

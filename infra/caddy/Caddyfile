@@ -30,6 +30,16 @@
 		reverse_proxy mediamtx:8889
 	}
 
+	handle /m/* {
+		header {
+			X-Robots-Tag "noindex, nofollow"
+			Referrer-Policy "no-referrer"
+			X-Frame-Options "DENY"
+			Content-Security-Policy "frame-ancestors 'none'"
+		}
+		reverse_proxy web:3000
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}

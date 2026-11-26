@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
-import { AuthProvider } from "@/providers/AuthProvider";
+import { ClientProviders } from "@/components/ClientProviders";
 
 export const metadata: Metadata = {
   title: "TablePulse — Restaurant Floor Intelligence",
@@ -16,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <ClientProviders>{children}</ClientProviders>
       </body>
     </html>
   );

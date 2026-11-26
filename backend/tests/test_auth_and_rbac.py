@@ -326,6 +326,7 @@ async def test_ws_ticket_and_policy_completeness_and_log_scrubber(
         "/api/v1/auth/ws-ticket",
         "/api/v1/auth/me",
         "/api/v1/internal/media-auth",
+        "/api/v1/public/menu/{qr_token}",
     }
     for route in app.routes:
         path = getattr(route, "path", "")
