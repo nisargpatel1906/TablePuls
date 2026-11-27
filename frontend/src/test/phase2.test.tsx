@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { MenuItemDrawer } from "@/components/MenuItemDrawer";
+import type { MenuCategoryDTO } from "@/types/floor";
 import { nextAvailableTableCode, previewBulkCodes } from "@/lib/table-codes";
 import {
   formatMinorUnits,
@@ -32,5 +36,48 @@ describe("Phase 2 Currency & Table Utilities", () => {
     expect(nextAvailableTableCode([])).toBe("T1");
     expect(nextAvailableTableCode(["T01", "T02", "T03", "T4"])).toBe("T5");
     expect(nextAvailableTableCode(["t1", "T2", "P01"])).toBe("T3");
+  });
+
+  it("preserves unsaved dish input in MenuItemDrawer when parent categories refresh (TC-P2-06 regression)", () => {
+    const catA: MenuCategoryDTO = {
+      id: "c1",
+      venue_id: "v1",
+      menu_id: "m1",
+      name: "Chaat",
+      description: null,
+      is_active: true,
+      sort_order: 0,
+      item_count: 1,
+    };
+    const catsA: MenuCategoryDTO[] = [catA];
+    const { rerender } = render(
+      <MenuItemDrawer
+        open
+        venueId="v1"
+        currencyCode="INR"
+        categories={catsA}
+        defaultCategoryId="c1"
+        item={null}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    const nameInput = screen.getByLabelText(/Dish Name/i) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "Bombay Bhel Puri" } });
+
+    // Simulate parent refetch creating a new categories array reference while drawer is open
+    rerender(
+      <MenuItemDrawer
+        open
+        venueId="v1"
+        currencyCode="INR"
+        categories={[{ ...catA, item_count: 2 }]}
+        defaultCategoryId="c1"
+        item={null}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect((screen.getByLabelText(/Dish Name/i) as HTMLInputElement).value).toBe("Bombay Bhel Puri");
   });
 });

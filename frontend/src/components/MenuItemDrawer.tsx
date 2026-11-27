@@ -1,7 +1,7 @@
 // TODO(ui-asset): SCR-019
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Check, ImagePlus, Plus, Trash2, X } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { minorUnitsToInputString, parseDisplayToMinorUnits } from "@/lib/currency";
@@ -75,9 +75,21 @@ export function MenuItemDrawer({
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const prevInitKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      prevInitKeyRef.current = null;
+      return;
+    }
+    const initKey = item ? `edit:${item.id}` : "new";
+    if (prevInitKeyRef.current === initKey) {
+      if (!item) {
+        setCategoryId((prev) => prev || defaultCategoryId || categories[0]?.id || "");
+      }
+      return;
+    }
+    prevInitKeyRef.current = initKey;
     if (item) {
       setCategoryId(item.category_id);
       setName(item.name);
