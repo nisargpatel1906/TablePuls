@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import re
 import secrets
 import uuid
 from collections.abc import Sequence
@@ -44,6 +45,81 @@ router = APIRouter(tags=["public-menu"])
 _scan_salt_date: date | None = None
 _scan_salt_secret: str = ""
 _background_tasks: set[asyncio.Task[None]] = set()
+_QR_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if fwd:
+        return fwd
+    return request.client.host if request.client else "unknown"
+
+
+def _apply_menu_slice(
+    menus: list[dict[str, Any]],
+    *,
+    lang: str | None,
+    menu_id: str | None,
+    category_id: str | None,
+    offset: int,
+    limit: int | None,
+) -> tuple[list[dict[str, Any]], int, bool, int | None]:
+    """Filter/localize menu payload and progressively paginate large catalogs (>200 items)."""
+    total_items = sum(len(cat.get("items", [])) for m in menus for cat in m.get("categories", []))
+    effective_limit = limit if limit is not None else (100 if total_items > 200 else None)
+
+    out_menus: list[dict[str, Any]] = []
+    seen = 0
+    taken = 0
+    has_more = False
+
+    is_paginated_or_cat_filtered = effective_limit is not None or offset > 0 or bool(category_id)
+    for m in menus:
+        if menu_id and m["id"] != menu_id:
+            continue
+        m_tr = (m.get("translations_json") or {}).get(lang or "", {}) if lang else {}
+        out_cats: list[dict[str, Any]] = []
+        for cat in m.get("categories", []):
+            if category_id and cat["id"] != category_id:
+                continue
+            c_tr = (cat.get("translations_json") or {}).get(lang or "", {}) if lang else {}
+            out_items: list[dict[str, Any]] = []
+            for item in cat.get("items", []):
+                if seen < offset:
+                    seen += 1
+                    continue
+                if effective_limit is not None and taken >= effective_limit:
+                    has_more = True
+                    continue
+                i_tr = (item.get("translations_json") or {}).get(lang or "", {}) if lang else {}
+                item_copy = dict(item)
+                if i_tr.get("name"):
+                    item_copy["name"] = i_tr["name"]
+                if i_tr.get("description"):
+                    item_copy["description"] = i_tr["description"]
+                out_items.append(item_copy)
+                seen += 1
+                taken += 1
+            if out_items:
+                out_cats.append(
+                    {
+                        **cat,
+                        "name": c_tr.get("name") or cat["name"],
+                        "description": c_tr.get("description") or cat.get("description"),
+                        "items": out_items,
+                    }
+                )
+        if out_cats or not is_paginated_or_cat_filtered:
+            out_menus.append(
+                {
+                    **m,
+                    "name": m_tr.get("name") or m["name"],
+                    "description": m_tr.get("description") or m.get("description"),
+                    "categories": out_cats,
+                }
+            )
+    next_offset = (offset + taken) if has_more else None
+    return out_menus, total_items, has_more, next_offset
 
 
 def _daily_scan_salt(today: date) -> str:
@@ -148,6 +224,7 @@ def _build_menus_from_catalog_rows(
                 "id": mid,
                 "name": r.menu_name,
                 "description": r.menu_description,
+                "translations_json": dict(getattr(r, "menu_translations_json", None) or {}),
                 "schedule_json": r.menu_schedule_json,
                 "is_default": bool(r.menu_is_default),
                 "sort_order": int(r.menu_sort_order),
@@ -163,6 +240,7 @@ def _build_menus_from_catalog_rows(
                 "id": cid,
                 "name": r.category_name,
                 "description": r.category_description,
+                "translations_json": dict(getattr(r, "category_translations_json", None) or {}),
                 "sort_order": int(r.category_sort_order),
                 "items": [],
             }
@@ -203,6 +281,7 @@ def _build_menus_from_catalog_rows(
                 "id": iid,
                 "name": r.item_name,
                 "description": r.item_description,
+                "translations_json": dict(getattr(r, "item_translations_json", None) or {}),
                 "price_minor_units": int(r.price_minor_units),
                 "compare_at_price_minor_units": (
                     int(r.compare_at_price_minor_units)
@@ -237,6 +316,7 @@ def _build_menus_from_catalog_rows(
                 "id": c["id"],
                 "name": c["name"],
                 "description": c["description"],
+                "translations_json": c["translations_json"],
                 "items": c["items"],
             }
             for c in sorted(m["categories"], key=lambda x: (x["sort_order"], x["name"]))
@@ -247,6 +327,7 @@ def _build_menus_from_catalog_rows(
                 "id": m["id"],
                 "name": m["name"],
                 "description": m["description"],
+                "translations_json": m["translations_json"],
                 "categories": cleaned_cats,
             }
         )
@@ -260,10 +341,18 @@ async def get_public_menu_by_qr(
     _flag: Annotated[None, Depends(require_feature_flag("public_menu_enabled"))],
     public_db: Annotated[AsyncSession, Depends(get_public_db)],
     p: Annotated[str | None, Query(max_length=128)] = None,
+    lang: Annotated[str | None, Query(pattern="^(en|hi)$")] = None,
+    menu_id: Annotated[str | None, Query(max_length=64)] = None,
+    category_id: Annotated[str | None, Query(max_length=64)] = None,
+    offset: Annotated[int, Query(ge=0, le=50000)] = 0,
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ) -> Response:
     """API-035: Unauthenticated table QR -> digital menu endpoint (read-only least privilege)."""
-    client_ip = request.client.host if request.client else "unknown"
+    if not _QR_TOKEN_RE.match(qr_token):
+        raise AppError(404, "QR_CODE_NOT_FOUND", "Table QR code was not found")
+
+    client_ip = _client_ip(request)
     allowed, retry_after = await check_rate_limit(
         f"pub_menu:{client_ip}", limit=60, window_seconds=60, fail_closed=False
     )
@@ -437,9 +526,19 @@ async def get_public_menu_by_qr(
     payload_dict = dict(payload_dict)
     payload_dict["table"] = {"label": str(qr_data["table_label"])}
     payload_dict["preview_mode"] = preview_mode
+    sliced_menus, total_items, has_more, next_offset = _apply_menu_slice(
+        list(payload_dict.get("menus") or []),
+        lang=lang,
+        menu_id=menu_id,
+        category_id=category_id,
+        offset=offset,
+        limit=limit,
+    )
+    payload_dict["menus"] = sliced_menus
     final_validated = PublicMenuResponse.model_validate(payload_dict)
 
-    etag = f'W/"{venue_id}:{final_validated.menu_revision}:{int(preview_mode)}"'
+    slice_sig = f"{lang or ''}:{menu_id or ''}:{category_id or ''}:{offset}:{limit or ''}"
+    etag = f'W/"{venue_id}:{final_validated.menu_revision}:{int(preview_mode)}:{hashlib.sha256(slice_sig.encode()).hexdigest()[:8]}"'
     if if_none_match and if_none_match.strip() == etag:
         return Response(
             status_code=304,
@@ -466,7 +565,11 @@ async def get_public_menu_by_qr(
         "ETag": etag,
         "Cache-Control": "no-cache",
         "X-Robots-Tag": "noindex, nofollow",
+        "X-Total-Items": str(total_items),
+        "X-Has-More": "true" if has_more else "false",
     }
+    if next_offset is not None:
+        headers["X-Next-Offset"] = str(next_offset)
     if stale_served:
         headers["X-Stale"] = "1"
 

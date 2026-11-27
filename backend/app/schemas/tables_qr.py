@@ -79,6 +79,10 @@ class BulkUpdateTablesRequest(StrictSchema):
     is_active: bool | None = None
 
 
+class RestoreTableRequest(StrictSchema):
+    new_table_code: str | None = Field(default=None, min_length=1, max_length=20)
+
+
 class RegenerateQRRequest(StrictSchema):
     reason: Literal["DAMAGED", "COMPROMISED", "REBRAND", "OTHER"] = "OTHER"
     grace_days: int | None = Field(default=None, ge=0, le=30)
@@ -86,4 +90,10 @@ class RegenerateQRRequest(StrictSchema):
 
 class ExportQRPdfRequest(StrictSchema):
     table_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
-    layout: Literal["A4_4UP", "A4_6UP", "LETTER_4UP"] = "A4_4UP"
+    layout: Literal["A4_4UP", "A4_6UP", "A6_1UP", "A4_STICKER_12UP", "LETTER_4UP"] = "A4_4UP"
+
+
+class ExportQRZipRequest(StrictSchema):
+    table_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+    format: Literal["svg", "png", "both"] = "png"
+    framed: bool = True

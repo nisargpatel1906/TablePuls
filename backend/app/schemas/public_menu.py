@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PublicStrictModel(BaseModel):
@@ -19,6 +19,7 @@ class PublicMenuItem(PublicStrictModel):
     id: str
     name: str
     description: str | None
+    translations_json: dict[str, dict[str, str]] = Field(default_factory=dict)
     price_minor_units: int
     compare_at_price_minor_units: int | None
     image_url: str | None
@@ -37,6 +38,7 @@ class PublicMenuCategory(PublicStrictModel):
     id: str
     name: str
     description: str | None
+    translations_json: dict[str, dict[str, str]] = Field(default_factory=dict)
     items: list[PublicMenuItem]
 
 
@@ -44,6 +46,7 @@ class PublicMenuSection(PublicStrictModel):
     id: str
     name: str
     description: str | None
+    translations_json: dict[str, dict[str, str]] = Field(default_factory=dict)
     categories: list[PublicMenuCategory]
 
 

@@ -17,13 +17,14 @@ from app.core.rbac import Role, require_feature_flag, require_venue_role
 from app.core.valkey_client import evict_public_menu_cache, evict_public_qr_cache
 from app.db.base import get_db, uuid7
 from app.db.models import DiningTable, QrScanDailyStat, TableQRCode, Venue
-from app.schemas.tables_qr import ExportQRPdfRequest, RegenerateQRRequest
+from app.schemas.tables_qr import ExportQRPdfRequest, ExportQRZipRequest, RegenerateQRRequest
 from app.services.audit import write_audit_log
 from app.services.qr_export import (
     build_qr_url,
     generate_qr_pdf_bytes,
     generate_qr_png_bytes,
     generate_qr_svg_bytes,
+    generate_qr_zip_bytes,
     sign_qr_preview_token,
 )
 
@@ -457,6 +458,146 @@ async def export_qr_pdf_batch(
             "Content-Disposition": f'attachment; filename="tablepulse-qr-cards-{body.layout.lower()}.pdf"',
             "Cache-Control": "no-store",
         },
+    )
+
+
+@router.post("/api/v1/venues/{venue_id}/qr/export-zip")
+async def export_qr_zip_batch(
+    venue_id: uuid.UUID,
+    body: ExportQRZipRequest,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="qr.read"))],
+    _flag: Annotated[None, Depends(require_feature_flag("qr_enabled"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """API-034 (batch ZIP): Download ZIP of SVG/PNG QR cards (max 100 tables)."""
+    if Role(actor.role) == Role.VIEWER:
+        raise AppError(403, "AUTH_FORBIDDEN", "VIEWER cannot export printable QR bundles")
+
+    venue = (await db.execute(select(Venue).where(Venue.id == venue_id))).scalar_one()
+    rows = (
+        await db.execute(
+            select(DiningTable, TableQRCode)
+            .join(TableQRCode, TableQRCode.table_id == DiningTable.id)
+            .where(
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+                DiningTable.deleted_at.is_(None),
+                DiningTable.id.in_(body.table_ids),
+                TableQRCode.status == "ACTIVE",
+            )
+            .order_by(DiningTable.sort_order.asc(), DiningTable.table_code.asc())
+        )
+    ).all()
+    if not rows:
+        raise AppError(404, "QR_CODE_NOT_FOUND", "No active QR codes found for selected tables")
+
+    cards = [
+        (
+            tbl.table_code,
+            tbl.display_name.strip() if tbl.display_name else f"Table {tbl.table_code}",
+            build_qr_url(qr.token),
+        )
+        for tbl, qr in rows
+    ]
+    zip_bytes = generate_qr_zip_bytes(
+        cards,
+        venue_name=venue.name,
+        fmt=body.format,
+        framed=body.framed,
+    )
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="QR_BATCH_ZIP_EXPORTED",
+        target_type="venue",
+        target_id=venue_id,
+        after_json={"table_count": len(cards), "format": body.format},
+        request=request,
+    )
+    await db.commit()
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="tablepulse-qr-bundle-{body.format}.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/api/v1/venues/{venue_id}/qr-codes/stats")
+async def get_qr_scan_stats(
+    venue_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="qr.read"))],
+    _flag: Annotated[None, Depends(require_feature_flag("qr_enabled"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> JSONResponse:
+    """Aggregate anonymized QR scan statistics by day and table (zero PII)."""
+    since_date = datetime.now(UTC).date() - timedelta(days=days - 1)
+    daily_rows = (
+        await db.execute(
+            select(QrScanDailyStat.scan_date, func.sum(QrScanDailyStat.scan_count))
+            .where(
+                QrScanDailyStat.venue_id == venue_id,
+                QrScanDailyStat.organization_id == actor.organization_id,
+                QrScanDailyStat.scan_date >= since_date,
+            )
+            .group_by(QrScanDailyStat.scan_date)
+            .order_by(QrScanDailyStat.scan_date.asc())
+        )
+    ).all()
+
+    table_window_rows = (
+        await db.execute(
+            select(QrScanDailyStat.table_id, func.sum(QrScanDailyStat.scan_count))
+            .where(
+                QrScanDailyStat.venue_id == venue_id,
+                QrScanDailyStat.organization_id == actor.organization_id,
+                QrScanDailyStat.scan_date >= since_date,
+            )
+            .group_by(QrScanDailyStat.table_id)
+        )
+    ).all()
+    win_by_table = {row[0]: int(row[1] or 0) for row in table_window_rows}
+
+    tbl_qrs = (
+        await db.execute(
+            select(DiningTable, TableQRCode)
+            .join(TableQRCode, TableQRCode.table_id == DiningTable.id)
+            .where(
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+                DiningTable.deleted_at.is_(None),
+                TableQRCode.status == "ACTIVE",
+            )
+            .order_by(DiningTable.sort_order.asc(), DiningTable.table_code.asc())
+        )
+    ).all()
+
+    per_table = [
+        {
+            "table_id": str(t.id),
+            "table_code": t.table_code,
+            "section_name": t.section_name,
+            "scans_total": int(q.scan_count),
+            "scans_window": win_by_table.get(t.id, 0),
+        }
+        for t, q in tbl_qrs
+    ]
+    return success_response(
+        {
+            "days": days,
+            "total_scans_all_time": sum(p["scans_total"] for p in per_table),
+            "total_scans_window": sum(int(r[1] or 0) for r in daily_rows),
+            "daily": [
+                {"date": r[0].isoformat(), "scans": int(r[1] or 0)} for r in daily_rows
+            ],
+            "by_table": per_table,
+        }
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from typing import Any
@@ -15,6 +16,7 @@ _local_rate_limits: dict[str, list[float]] = {}
 _local_revocations: dict[str, int] = {}
 _local_public_menu_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _local_public_qr_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_local_ephemeral: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def get_valkey() -> Valkey:
@@ -158,6 +160,27 @@ async def cache_get_json(key: str) -> dict[str, Any] | None:
             return dict(json.loads(raw))
     except Exception:
         pass
+    entry = _local_ephemeral.get(key)
+    if entry and entry[0] > time.monotonic():
+        return dict(entry[1])
+    _local_ephemeral.pop(key, None)
+    return None
+
+
+async def set_ephemeral_json(key: str, payload: dict[str, Any], ttl_seconds: int = 900) -> None:
+    _local_ephemeral[key] = (time.monotonic() + ttl_seconds, payload)
+    with contextlib.suppress(Exception):
+        await get_valkey().set(key, json.dumps(payload), ex=ttl_seconds)
+
+
+async def get_ephemeral_json(key: str) -> dict[str, Any] | None:
+    return await cache_get_json(key)
+
+
+async def delete_ephemeral_json(key: str) -> None:
+    _local_ephemeral.pop(key, None)
+    with contextlib.suppress(Exception):
+        await get_valkey().delete(key)
     return None
 
 

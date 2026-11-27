@@ -75,6 +75,7 @@ class MenuScheduleV1(StrictSchema):
 class CreateMenuRequest(StrictSchema):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=300)
+    translations_json: dict[str, dict[str, str]] | None = None
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"] = "DRAFT"
     is_active: bool = True
     is_default: bool = False
@@ -85,6 +86,7 @@ class CreateMenuRequest(StrictSchema):
 class UpdateMenuRequest(StrictSchema):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=300)
+    translations_json: dict[str, dict[str, str]] | None = None
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"] | None = None
     is_active: bool | None = None
     is_default: bool | None = None
@@ -117,6 +119,7 @@ class UpdateMenuSettingsRequest(StrictSchema):
 class CreateCategoryRequest(StrictSchema):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=300)
+    translations_json: dict[str, dict[str, str]] | None = None
     is_active: bool = True
     sort_order: int = Field(default=0, ge=0, le=100000)
 
@@ -124,6 +127,7 @@ class CreateCategoryRequest(StrictSchema):
 class UpdateCategoryRequest(StrictSchema):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=300)
+    translations_json: dict[str, dict[str, str]] | None = None
     is_active: bool | None = None
     sort_order: int | None = Field(default=None, ge=0, le=100000)
 
@@ -140,8 +144,10 @@ class MenuItemVariantInput(StrictSchema):
 
 class CreateMenuItemRequest(StrictSchema):
     category_id: uuid.UUID
+    sku: str | None = Field(default=None, max_length=64)
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
+    translations_json: dict[str, dict[str, str]] | None = None
     price_minor_units: int = Field(ge=0, le=100_000_000)
     compare_at_price_minor_units: int | None = Field(default=None, ge=0, le=100_000_000)
     image_asset_id: uuid.UUID | None = None
@@ -199,8 +205,11 @@ class CreateMenuItemRequest(StrictSchema):
 
 class UpdateMenuItemRequest(StrictSchema):
     category_id: uuid.UUID | None = None
+    sku: str | None = Field(default=None, max_length=64)
+    clear_sku: bool = False
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
+    translations_json: dict[str, dict[str, str]] | None = None
     price_minor_units: int | None = Field(default=None, ge=0, le=100_000_000)
     compare_at_price_minor_units: int | None = Field(default=None, ge=0, le=100_000_000)
     clear_compare_at_price: bool = False
@@ -266,3 +275,13 @@ class ItemAvailabilityRequest(StrictSchema):
 class BulkItemAvailabilityRequest(StrictSchema):
     item_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
     is_available: bool
+
+
+class BulkItemActionRequest(StrictSchema):
+    item_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    action: Literal["delete", "move"]
+    target_category_id: uuid.UUID | None = None
+
+
+class CsvImportCommitRequest(StrictSchema):
+    strategy: Literal["all_or_nothing", "skip_invalid"] = "all_or_nothing"

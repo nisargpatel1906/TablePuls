@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -20,7 +21,10 @@ from app.core.rbac import Role, require_feature_flag, require_venue_role
 from app.core.validation import clean_optional_text, clean_text
 from app.core.valkey_client import (
     check_and_store_idempotency,
+    delete_ephemeral_json,
     evict_public_menu_cache,
+    get_ephemeral_json,
+    set_ephemeral_json,
 )
 from app.db.base import get_db, uuid7
 from app.db.models import (
@@ -31,10 +35,14 @@ from app.db.models import (
     Venue,
 )
 from app.schemas.menus_qr import (
+    ALLOWED_ALLERGENS,
+    ALLOWED_DIETARY_TAGS,
+    BulkItemActionRequest,
     BulkItemAvailabilityRequest,
     CreateCategoryRequest,
     CreateMenuItemRequest,
     CreateMenuRequest,
+    CsvImportCommitRequest,
     ItemAvailabilityRequest,
     ReorderIdsRequest,
     UpdateCategoryRequest,
@@ -53,6 +61,9 @@ from app.services.media import (
 router = APIRouter(tags=["menus-admin"])
 
 _FILENAME_RE_SEG = r"^[a-f0-9]{32}(_thumb)?\.webp$"
+_SKU_RE = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,63}$")
+MAX_CSV_IMPORT_BYTES = 2 * 1024 * 1024
+MAX_CSV_IMPORT_ROWS = 2000
 
 
 def _csv_safe(val: object) -> str:
@@ -60,6 +71,48 @@ def _csv_safe(val: object) -> str:
     if s.startswith(("=", "+", "-", "@", "\t", "\r")):
         return "'" + s
     return s
+
+
+def _csv_unquote_safe(val: str | None) -> str:
+    s = (val or "").strip()
+    if len(s) >= 2 and s[0] == "'" and s[1] in ("=", "+", "-", "@", "\t", "\r"):
+        return s[1:]
+    return s
+
+
+def _clean_sku(raw: str | None) -> str | None:
+    if raw is None or not raw.strip():
+        return None
+    sku = raw.strip().upper()
+    if not _SKU_RE.match(sku):
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "SKU must be 1-64 alphanumeric, dash, or underscore characters",
+            {"sku": "invalid SKU format"},
+        )
+    return sku
+
+
+def _clean_translations(raw: dict[str, dict[str, str]] | None) -> dict[str, dict[str, str]]:
+    if not raw:
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for lang, fields in raw.items():
+        if lang not in ("en", "hi") or not isinstance(fields, dict):
+            continue
+        cleaned_lang: dict[str, str] = {}
+        name_val = clean_optional_text(fields.get("name"), max_len=120, field=f"translations.{lang}.name")
+        desc_val = clean_optional_text(
+            fields.get("description"), max_len=500, field=f"translations.{lang}.description"
+        )
+        if name_val:
+            cleaned_lang["name"] = name_val
+        if desc_val:
+            cleaned_lang["description"] = desc_val
+        if cleaned_lang:
+            out[lang] = cleaned_lang
+    return out
 
 
 def _media_urls(asset: MenuMediaAsset | None) -> tuple[str | None, str | None]:
@@ -74,6 +127,7 @@ def _menu_dict(m: Menu, category_count: int = 0, item_count: int = 0) -> dict[st
         "venue_id": str(m.venue_id),
         "name": m.name,
         "description": m.description,
+        "translations_json": m.translations_json or {},
         "status": m.status,
         "is_active": m.is_active,
         "is_default": m.is_default,
@@ -93,6 +147,7 @@ def _category_dict(c: MenuCategory, item_count: int = 0) -> dict[str, Any]:
         "menu_id": str(c.menu_id),
         "name": c.name,
         "description": c.description,
+        "translations_json": c.translations_json or {},
         "is_active": c.is_active,
         "sort_order": c.sort_order,
         "item_count": item_count,
@@ -105,8 +160,10 @@ def _item_dict(item: MenuItem, asset: MenuMediaAsset | None = None) -> dict[str,
         "id": str(item.id),
         "venue_id": str(item.venue_id),
         "category_id": str(item.category_id),
+        "sku": item.sku,
         "name": item.name,
         "description": item.description,
+        "translations_json": item.translations_json or {},
         "price_minor_units": item.price_minor_units,
         "compare_at_price_minor_units": item.compare_at_price_minor_units,
         "image_asset_id": str(item.image_asset_id) if item.image_asset_id else None,
@@ -277,6 +334,7 @@ async def create_menu(
         venue_id=venue_id,
         name=name,
         description=desc,
+        translations_json=_clean_translations(body.translations_json),
         status=body.status,
         is_active=body.is_active,
         is_default=body.is_default,
@@ -349,6 +407,8 @@ async def update_menu(
 
     if body.description is not None:
         m.description = clean_optional_text(body.description, max_len=300, field="description")
+    if body.translations_json is not None:
+        m.translations_json = _clean_translations(body.translations_json)
 
     if body.status == "PUBLISHED" and m.status != "PUBLISHED":
         pub_item_cnt = (
@@ -412,6 +472,152 @@ async def update_menu(
     await db.refresh(m)
     await evict_public_menu_cache(str(venue_id))
     return success_response(_menu_dict(m))
+
+
+@router.post("/api/v1/venues/{venue_id}/menus/{menu_id}/duplicate", status_code=201)
+async def duplicate_menu(
+    venue_id: uuid.UUID,
+    menu_id: uuid.UUID,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="menu.manage"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Clone an entire menu with all categories and items into a DRAFT copy."""
+    orig = (
+        await db.execute(
+            select(Menu).where(
+                Menu.id == menu_id,
+                Menu.venue_id == venue_id,
+                Menu.organization_id == actor.organization_id,
+                Menu.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if orig is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Menu not found")
+
+    existing_names = {
+        n.lower()
+        for n in (
+            await db.execute(
+                select(Menu.name).where(Menu.venue_id == venue_id, Menu.deleted_at.is_(None))
+            )
+        )
+        .scalars()
+        .all()
+    }
+    copy_name = f"{orig.name[:93]} (Copy)"
+    suffix_idx = 2
+    while copy_name.lower() in existing_names:
+        sfx = f" ({suffix_idx})"
+        copy_name = f"{orig.name[: 100 - len(sfx)]}{sfx}"
+        suffix_idx += 1
+
+    clone = Menu(
+        id=uuid7(),
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        name=copy_name,
+        description=orig.description,
+        translations_json=dict(orig.translations_json or {}),
+        status="DRAFT",
+        is_active=True,
+        is_default=False,
+        schedule_json=dict(orig.schedule_json) if orig.schedule_json else None,
+        sort_order=orig.sort_order + 1,
+    )
+    db.add(clone)
+    await db.flush()
+
+    orig_cats = (
+        (
+            await db.execute(
+                select(MenuCategory)
+                .where(MenuCategory.menu_id == orig.id, MenuCategory.deleted_at.is_(None))
+                .order_by(MenuCategory.sort_order.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cat_map: dict[uuid.UUID, uuid.UUID] = {}
+    for c in orig_cats:
+        new_cid = uuid7()
+        cat_map[c.id] = new_cid
+        db.add(
+            MenuCategory(
+                id=new_cid,
+                organization_id=actor.organization_id,
+                venue_id=venue_id,
+                menu_id=clone.id,
+                name=c.name,
+                description=c.description,
+                translations_json=dict(c.translations_json or {}),
+                is_active=c.is_active,
+                sort_order=c.sort_order,
+            )
+        )
+    await db.flush()
+
+    item_count = 0
+    if cat_map:
+        orig_items = (
+            (
+                await db.execute(
+                    select(MenuItem)
+                    .where(
+                        MenuItem.category_id.in_(list(cat_map.keys())),
+                        MenuItem.deleted_at.is_(None),
+                    )
+                    .order_by(MenuItem.sort_order.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for it in orig_items:
+            db.add(
+                MenuItem(
+                    id=uuid7(),
+                    organization_id=actor.organization_id,
+                    venue_id=venue_id,
+                    category_id=cat_map[it.category_id],
+                    sku=None,
+                    name=it.name,
+                    description=it.description,
+                    translations_json=dict(it.translations_json or {}),
+                    price_minor_units=it.price_minor_units,
+                    compare_at_price_minor_units=it.compare_at_price_minor_units,
+                    image_asset_id=it.image_asset_id,
+                    image_alt=it.image_alt,
+                    is_available=it.is_available,
+                    is_featured=it.is_featured,
+                    dietary_tags=list(it.dietary_tags or []),
+                    allergens=list(it.allergens or []),
+                    variants_json=list(it.variants_json or []),
+                    prep_time_minutes=it.prep_time_minutes,
+                    calories_kcal=it.calories_kcal,
+                    sort_order=it.sort_order,
+                )
+            )
+            item_count += 1
+
+    await _bump_menu_revision(db, venue_id)
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="MENU_DUPLICATED",
+        target_type="menu",
+        target_id=clone.id,
+        after_json={"source_menu_id": str(orig.id), "name": clone.name, "items": item_count},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(clone)
+    await evict_public_menu_cache(str(venue_id))
+    return success_response(_menu_dict(clone, len(cat_map), item_count), status_code=201)
 
 
 @router.delete("/api/v1/venues/{venue_id}/menus/{menu_id}")
@@ -663,6 +869,7 @@ async def create_category(
         menu_id=menu_id,
         name=name,
         description=desc,
+        translations_json=_clean_translations(body.translations_json),
         is_active=body.is_active,
         sort_order=body.sort_order,
     )
@@ -776,6 +983,8 @@ async def update_category(
         cat.name = new_name
     if body.description is not None:
         cat.description = clean_optional_text(body.description, max_len=300, field="description")
+    if body.translations_json is not None:
+        cat.translations_json = _clean_translations(body.translations_json)
     if body.is_active is not None:
         cat.is_active = body.is_active
     if body.sort_order is not None:
@@ -910,6 +1119,19 @@ async def list_menu_items(
         .all()
     )
 
+    now = datetime.now(UTC)
+    restored_any = False
+    for r in rows:
+        if not r.is_available and r.unavailable_until is not None and r.unavailable_until <= now:
+            r.is_available = True
+            r.unavailable_until = None
+            r.updated_at = now
+            restored_any = True
+    if restored_any:
+        await _bump_menu_revision(db, venue_id)
+        await db.commit()
+        await evict_public_menu_cache(str(venue_id))
+
     asset_ids = [r.image_asset_id for r in rows if r.image_asset_id is not None]
     assets_by_id: dict[uuid.UUID, MenuMediaAsset] = {}
     if asset_ids:
@@ -931,17 +1153,50 @@ async def list_menu_items(
         if tag_u and tag_u not in (r.dietary_tags or []):
             continue
         if search_q:
-            hay = f"{r.name} {r.description or ''}".lower()
+            hay = f"{r.name} {r.description or ''} {r.sku or ''}".lower()
             if search_q not in hay:
                 continue
         filtered.append(r)
 
     if format == "csv":
+        cat_rows = (
+            (await db.execute(select(MenuCategory).where(MenuCategory.venue_id == venue_id)))
+            .scalars()
+            .all()
+        )
+        menu_rows = (
+            (await db.execute(select(Menu).where(Menu.venue_id == venue_id))).scalars().all()
+        )
+        cat_by_id = {c.id: c for c in cat_rows}
+        menu_by_id = {m.id: m for m in menu_rows}
+
         buf = io.StringIO()
         buf.write("\ufeff")
         writer = csv.writer(buf)
-        writer.writerow(["id", "name", "description", "price_minor_units", "is_available", "dietary_tags"])
+        writer.writerow(
+            [
+                "id",
+                "name",
+                "description",
+                "price_minor_units",
+                "is_available",
+                "dietary_tags",
+                "sku",
+                "category_name",
+                "menu_name",
+                "compare_at_price_minor_units",
+                "allergens",
+                "is_featured",
+                "prep_time_minutes",
+                "calories_kcal",
+                "name_hi",
+                "description_hi",
+            ]
+        )
         for r in filtered:
+            cat_obj = cat_by_id.get(r.category_id)
+            menu_obj = menu_by_id.get(cat_obj.menu_id) if cat_obj else None
+            hi_tr = (r.translations_json or {}).get("hi", {})
             writer.writerow(
                 [
                     _csv_safe(r.id),
@@ -950,6 +1205,16 @@ async def list_menu_items(
                     r.price_minor_units,
                     r.is_available,
                     _csv_safe(",".join(r.dietary_tags or [])),
+                    _csv_safe(r.sku or ""),
+                    _csv_safe(cat_obj.name if cat_obj else ""),
+                    _csv_safe(menu_obj.name if menu_obj else ""),
+                    "" if r.compare_at_price_minor_units is None else r.compare_at_price_minor_units,
+                    _csv_safe(",".join(r.allergens or [])),
+                    r.is_featured,
+                    "" if r.prep_time_minutes is None else r.prep_time_minutes,
+                    "" if r.calories_kcal is None else r.calories_kcal,
+                    _csv_safe(hi_tr.get("name", "")),
+                    _csv_safe(hi_tr.get("description", "")),
                 ]
             )
         return Response(
@@ -1014,6 +1279,24 @@ async def create_menu_item(
     name = clean_text(body.name, max_len=120, field="name")
     desc = clean_optional_text(body.description, max_len=500, field="description")
     img_alt = clean_optional_text(body.image_alt, max_len=160, field="image_alt")
+    sku_clean = _clean_sku(body.sku)
+    if sku_clean:
+        sku_dup = (
+            await db.execute(
+                select(MenuItem.id).where(
+                    MenuItem.venue_id == venue_id,
+                    MenuItem.deleted_at.is_(None),
+                    func.lower(MenuItem.sku) == sku_clean.lower(),
+                )
+            )
+        ).scalar_one_or_none()
+        if sku_dup is not None:
+            raise AppError(
+                409,
+                "DUPLICATE_SKU",
+                f"SKU '{sku_clean}' already exists in this venue",
+                {"sku": "duplicate SKU"},
+            )
 
     variants = [
         {
@@ -1029,8 +1312,10 @@ async def create_menu_item(
         organization_id=actor.organization_id,
         venue_id=venue_id,
         category_id=body.category_id,
+        sku=sku_clean,
         name=name,
         description=desc,
+        translations_json=_clean_translations(body.translations_json),
         price_minor_units=body.price_minor_units,
         compare_at_price_minor_units=body.compare_at_price_minor_units,
         image_asset_id=body.image_asset_id,
@@ -1151,6 +1436,564 @@ async def bulk_item_availability(
     return success_response({"updated_count": int(getattr(res, "rowcount", 0) or 0)})
 
 
+@router.post("/api/v1/venues/{venue_id}/menu-items/bulk-action")
+async def bulk_item_action(
+    venue_id: uuid.UUID,
+    body: BulkItemActionRequest,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="menu.manage"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Bulk delete or move menu items across categories atomically."""
+    now = datetime.now(UTC)
+    if body.action == "move":
+        if body.target_category_id is None:
+            raise AppError(
+                400,
+                "VALIDATION_ERROR",
+                "target_category_id is required when action is 'move'",
+                {"target_category_id": "required"},
+            )
+        cat = (
+            await db.execute(
+                select(MenuCategory.id).where(
+                    MenuCategory.id == body.target_category_id,
+                    MenuCategory.venue_id == venue_id,
+                    MenuCategory.organization_id == actor.organization_id,
+                    MenuCategory.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if cat is None:
+            raise AppError(404, "RESOURCE_NOT_FOUND", "Target category not found in venue")
+        res = await db.execute(
+            update(MenuItem)
+            .where(
+                MenuItem.venue_id == venue_id,
+                MenuItem.organization_id == actor.organization_id,
+                MenuItem.deleted_at.is_(None),
+                MenuItem.id.in_(body.item_ids),
+            )
+            .values(category_id=body.target_category_id, updated_at=now)
+        )
+        affected = int(getattr(res, "rowcount", 0) or 0)
+    else:
+        res = await db.execute(
+            update(MenuItem)
+            .where(
+                MenuItem.venue_id == venue_id,
+                MenuItem.organization_id == actor.organization_id,
+                MenuItem.deleted_at.is_(None),
+                MenuItem.id.in_(body.item_ids),
+            )
+            .values(deleted_at=now, updated_at=now)
+        )
+        affected = int(getattr(res, "rowcount", 0) or 0)
+
+    await _bump_menu_revision(db, venue_id)
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="MENU_ITEMS_BULK_UPDATED",
+        target_type="venue",
+        target_id=venue_id,
+        after_json={"action": body.action, "affected": affected},
+        request=request,
+    )
+    await db.commit()
+    await evict_public_menu_cache(str(venue_id))
+    return success_response({"action": body.action, "affected": affected})
+
+
+@router.get("/api/v1/venues/{venue_id}/menus/import/template")
+async def download_menu_csv_template(
+    venue_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="menu.manage"))],
+) -> Response:
+    """Download UTF-8 BOM formula-safe CSV template for bulk menu item import."""
+    _ = venue_id, actor
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    w = csv.writer(buf)
+    w.writerow(
+        [
+            "sku",
+            "category_name",
+            "name",
+            "description",
+            "price_minor_units",
+            "compare_at_price_minor_units",
+            "dietary_tags",
+            "allergens",
+            "is_available",
+            "is_featured",
+            "prep_time_minutes",
+            "calories_kcal",
+            "name_hi",
+            "description_hi",
+        ]
+    )
+    w.writerow(
+        [
+            "STARTER-01",
+            "Starters",
+            "Paneer Tikka",
+            "Chargrilled cottage cheese with spices",
+            28900,
+            32900,
+            "VEG,GLUTEN_FREE",
+            "DAIRY",
+            "true",
+            "true",
+            15,
+            340,
+            "पनीर टिक्का",
+            "मसालेदार ग्रिल्ड पनीर",
+        ]
+    )
+    return Response(
+        content=buf.getvalue().encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="menu-import-template.csv"'},
+    )
+
+
+def _parse_bool_cell(raw: str | None, default: bool = True) -> bool:
+    s = (raw or "").strip().lower()
+    if not s:
+        return default
+    if s in ("true", "1", "yes", "y"):
+        return True
+    if s in ("false", "0", "no", "n"):
+        return False
+    raise ValueError(f"Invalid boolean '{raw}'")
+
+
+@router.post("/api/v1/venues/{venue_id}/menus/import/preview")
+async def preview_menu_csv_import(
+    venue_id: uuid.UUID,
+    actor: Annotated[Any, Depends(require_venue_role(capability="menu.manage"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: Annotated[UploadFile, File(...)],
+    menu_id: Annotated[uuid.UUID, Query(...)],
+    mode: Annotated[Literal["create_only", "upsert_by_sku"], Query()] = "create_only",
+) -> JSONResponse:
+    """Validate uploaded CSV (<=2 MB, <=2000 rows) and stage preview for 15 minutes."""
+    menu = (
+        await db.execute(
+            select(Menu).where(
+                Menu.id == menu_id,
+                Menu.venue_id == venue_id,
+                Menu.organization_id == actor.organization_id,
+                Menu.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if menu is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Target menu not found")
+
+    raw_bytes = await file.read(MAX_CSV_IMPORT_BYTES + 1)
+    if len(raw_bytes) > MAX_CSV_IMPORT_BYTES:
+        raise AppError(
+            413,
+            "PAYLOAD_TOO_LARGE",
+            "CSV file exceeds 2 MB import limit",
+        )
+    try:
+        text_csv = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise AppError(400, "VALIDATION_ERROR", "CSV must be UTF-8 encoded") from exc
+
+    reader = csv.DictReader(io.StringIO(text_csv))
+    if not reader.fieldnames or "name" not in reader.fieldnames or "price_minor_units" not in reader.fieldnames:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "CSV must include 'name', 'category_name', and 'price_minor_units' columns",
+        )
+
+    existing_items = (
+        (
+            await db.execute(
+                select(MenuItem).where(
+                    MenuItem.venue_id == venue_id,
+                    MenuItem.deleted_at.is_(None),
+                    MenuItem.sku.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing_skus = {str(it.sku).upper(): str(it.id) for it in existing_items if it.sku}
+
+    parsed_rows: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    seen_skus_in_file: set[str] = set()
+    total_rows = 0
+    will_create = 0
+    will_update = 0
+
+    for row_num, row in enumerate(reader, start=2):
+        total_rows += 1
+        if total_rows > MAX_CSV_IMPORT_ROWS:
+            raise AppError(
+                400,
+                "VALIDATION_ERROR",
+                f"CSV exceeds maximum {MAX_CSV_IMPORT_ROWS} rows per import",
+            )
+        cat_name = _csv_unquote_safe(row.get("category_name")) or "Imported"
+        if "category_name" in (reader.fieldnames or []) and not _csv_unquote_safe(
+            row.get("category_name")
+        ):
+            errors.append({"row": row_num, "column": "category_name", "message": "Missing category_name"})
+            continue
+
+        item_name = _csv_unquote_safe(row.get("name"))
+        if not item_name or len(item_name) > 120:
+            errors.append({"row": row_num, "column": "name", "message": "Name must be 1-120 chars"})
+            continue
+
+        try:
+            price = int((row.get("price_minor_units") or "").strip())
+            if price < 0 or price > 100_000_000:
+                raise ValueError("price out of range")
+        except Exception:
+            errors.append(
+                {
+                    "row": row_num,
+                    "column": "price_minor_units",
+                    "message": "Invalid integer minor units (0..100000000)",
+                }
+            )
+            continue
+
+        comp_raw = (row.get("compare_at_price_minor_units") or "").strip()
+        comp_price: int | None = None
+        if comp_raw:
+            try:
+                comp_price = int(comp_raw)
+                if comp_price <= price or comp_price > 100_000_000:
+                    raise ValueError("compare price must exceed price")
+            except Exception:
+                errors.append(
+                    {
+                        "row": row_num,
+                        "column": "compare_at_price_minor_units",
+                        "message": "Compare price must be an integer greater than price_minor_units",
+                    }
+                )
+                continue
+
+        sku_val = _csv_unquote_safe(row.get("sku")).upper() or None
+        if sku_val is not None:
+            if not _SKU_RE.match(sku_val):
+                errors.append({"row": row_num, "column": "sku", "message": "Invalid SKU format"})
+                continue
+            if sku_val in seen_skus_in_file:
+                errors.append({"row": row_num, "column": "sku", "message": f"Duplicate SKU '{sku_val}' in CSV"})
+                continue
+            seen_skus_in_file.add(sku_val)
+
+        if sku_val and sku_val in existing_skus and mode == "create_only":
+            errors.append(
+                {
+                    "row": row_num,
+                    "column": "sku",
+                    "message": f"SKU '{sku_val}' already exists (use upsert_by_sku mode)",
+                }
+            )
+            continue
+
+        tags: list[str] = []
+        tag_err = False
+        for t_raw in (row.get("dietary_tags") or "").split(","):
+            t_clean = t_raw.strip().upper()
+            if not t_clean:
+                continue
+            if t_clean not in ALLOWED_DIETARY_TAGS:
+                errors.append(
+                    {
+                        "row": row_num,
+                        "column": "dietary_tags",
+                        "message": f"Unsupported dietary tag '{t_clean}'",
+                    }
+                )
+                tag_err = True
+                break
+            if t_clean not in tags:
+                tags.append(t_clean)
+        if tag_err:
+            continue
+
+        allergens: list[str] = []
+        all_err = False
+        for a_raw in (row.get("allergens") or "").split(","):
+            a_clean = a_raw.strip().upper()
+            if not a_clean:
+                continue
+            if a_clean not in ALLOWED_ALLERGENS:
+                errors.append(
+                    {
+                        "row": row_num,
+                        "column": "allergens",
+                        "message": f"Unsupported allergen '{a_clean}'",
+                    }
+                )
+                all_err = True
+                break
+            if a_clean not in allergens:
+                allergens.append(a_clean)
+        if all_err:
+            continue
+
+        try:
+            is_avail = _parse_bool_cell(row.get("is_available"), True)
+            is_feat = _parse_bool_cell(row.get("is_featured"), False)
+        except ValueError as exc:
+            errors.append({"row": row_num, "column": "is_available", "message": str(exc)})
+            continue
+
+        prep_raw = (row.get("prep_time_minutes") or "").strip()
+        cal_raw = (row.get("calories_kcal") or "").strip()
+        prep_val = int(prep_raw) if prep_raw.isdigit() else None
+        cal_val = int(cal_raw) if cal_raw.isdigit() else None
+        if prep_val is not None and not (1 <= prep_val <= 240):
+            errors.append(
+                {"row": row_num, "column": "prep_time_minutes", "message": "Must be 1..240 minutes"}
+            )
+            continue
+        if cal_val is not None and not (0 <= cal_val <= 10000):
+            errors.append(
+                {"row": row_num, "column": "calories_kcal", "message": "Must be 0..10000 kcal"}
+            )
+            continue
+
+        desc_val = _csv_unquote_safe(row.get("description"))[:500] or None
+        name_hi = _csv_unquote_safe(row.get("name_hi"))[:120]
+        desc_hi = _csv_unquote_safe(row.get("description_hi"))[:500]
+        tr: dict[str, dict[str, str]] = {}
+        if name_hi or desc_hi:
+            tr["hi"] = {}
+            if name_hi:
+                tr["hi"]["name"] = name_hi
+            if desc_hi:
+                tr["hi"]["description"] = desc_hi
+
+        op = "update" if (sku_val and sku_val in existing_skus and mode == "upsert_by_sku") else "create"
+        if op == "update":
+            will_update += 1
+        else:
+            will_create += 1
+
+        parsed_rows.append(
+            {
+                "row": row_num,
+                "op": op,
+                "target_item_id": existing_skus.get(sku_val) if sku_val else None,
+                "sku": sku_val,
+                "category_name": cat_name[:100],
+                "name": item_name,
+                "description": desc_val,
+                "price_minor_units": price,
+                "compare_at_price_minor_units": comp_price,
+                "dietary_tags": tags,
+                "allergens": allergens,
+                "is_available": is_avail,
+                "is_featured": is_feat,
+                "prep_time_minutes": prep_val,
+                "calories_kcal": cal_val,
+                "translations_json": tr,
+            }
+        )
+
+    import_id = str(uuid7())
+    staging = {
+        "organization_id": str(actor.organization_id),
+        "venue_id": str(venue_id),
+        "menu_id": str(menu_id),
+        "mode": mode,
+        "rows": parsed_rows,
+        "errors": errors,
+    }
+    await set_ephemeral_json(f"tp:csv_import:{venue_id}:{import_id}", staging, ttl_seconds=900)
+
+    return success_response(
+        {
+            "import_id": import_id,
+            "expires_in": 900,
+            "mode": mode,
+            "total_rows": total_rows,
+            "valid_rows": len(parsed_rows),
+            "invalid_rows": len(errors),
+            "will_create": will_create,
+            "will_update": will_update,
+            "errors": errors[:50],
+            "preview_sample": [
+                {
+                    "row": r["row"],
+                    "op": r["op"],
+                    "sku": r["sku"],
+                    "category_name": r["category_name"],
+                    "name": r["name"],
+                    "price_minor_units": r["price_minor_units"],
+                }
+                for r in parsed_rows[:10]
+            ],
+        }
+    )
+
+
+@router.post("/api/v1/venues/{venue_id}/menus/import/{import_id}/commit")
+async def commit_menu_csv_import(
+    venue_id: uuid.UUID,
+    import_id: str,
+    body: CsvImportCommitRequest,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="menu.manage"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Commit validated CSV import preview rows (supports all_or_nothing and skip_invalid)."""
+    key = f"tp:csv_import:{venue_id}:{import_id}"
+    staged = await get_ephemeral_json(key)
+    if staged is None or staged.get("organization_id") != str(actor.organization_id):
+        raise AppError(
+            410,
+            "IMPORT_EXPIRED",
+            "CSV import preview has expired or was already committed",
+        )
+
+    if body.strategy == "all_or_nothing" and staged.get("errors"):
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "CSV contains invalid rows; fix errors or commit with strategy='skip_invalid'",
+        )
+
+    menu_id = uuid.UUID(str(staged["menu_id"]))
+    existing_cats = (
+        (
+            await db.execute(
+                select(MenuCategory).where(
+                    MenuCategory.menu_id == menu_id,
+                    MenuCategory.venue_id == venue_id,
+                    MenuCategory.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cats_by_lower = {c.name.lower(): c for c in existing_cats}
+    next_cat_sort = max((c.sort_order for c in existing_cats), default=0) + 1
+
+    created_count = 0
+    updated_count = 0
+    now = datetime.now(UTC)
+
+    for idx, r in enumerate(staged.get("rows", [])):
+        cname = str(r["category_name"])
+        cat_obj = cats_by_lower.get(cname.lower())
+        if cat_obj is None:
+            cat_obj = MenuCategory(
+                id=uuid7(),
+                organization_id=actor.organization_id,
+                venue_id=venue_id,
+                menu_id=menu_id,
+                name=clean_text(cname, max_len=100, field="category_name"),
+                sort_order=next_cat_sort,
+                is_active=True,
+            )
+            next_cat_sort += 1
+            db.add(cat_obj)
+            await db.flush()
+            cats_by_lower[cname.lower()] = cat_obj
+
+        if r["op"] == "update" and r.get("target_item_id"):
+            item_obj = (
+                await db.execute(
+                    select(MenuItem).where(
+                        MenuItem.id == uuid.UUID(str(r["target_item_id"])),
+                        MenuItem.venue_id == venue_id,
+                        MenuItem.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if item_obj is not None:
+                item_obj.category_id = cat_obj.id
+                item_obj.name = clean_text(r["name"], max_len=120, field="name")
+                item_obj.description = r["description"]
+                item_obj.price_minor_units = int(r["price_minor_units"])
+                item_obj.compare_at_price_minor_units = r["compare_at_price_minor_units"]
+                item_obj.dietary_tags = list(r["dietary_tags"])
+                item_obj.allergens = list(r["allergens"])
+                item_obj.is_available = bool(r["is_available"])
+                item_obj.is_featured = bool(r["is_featured"])
+                item_obj.prep_time_minutes = r["prep_time_minutes"]
+                item_obj.calories_kcal = r["calories_kcal"]
+                if r.get("translations_json"):
+                    merged = dict(item_obj.translations_json or {})
+                    merged.update(r["translations_json"])
+                    item_obj.translations_json = merged
+                item_obj.version += 1
+                item_obj.updated_at = now
+                updated_count += 1
+                continue
+
+        db.add(
+            MenuItem(
+                id=uuid7(),
+                organization_id=actor.organization_id,
+                venue_id=venue_id,
+                category_id=cat_obj.id,
+                sku=r["sku"],
+                name=clean_text(r["name"], max_len=120, field="name"),
+                description=r["description"],
+                translations_json=r.get("translations_json") or {},
+                price_minor_units=int(r["price_minor_units"]),
+                compare_at_price_minor_units=r["compare_at_price_minor_units"],
+                is_available=bool(r["is_available"]),
+                is_featured=bool(r["is_featured"]),
+                dietary_tags=list(r["dietary_tags"]),
+                allergens=list(r["allergens"]),
+                prep_time_minutes=r["prep_time_minutes"],
+                calories_kcal=r["calories_kcal"],
+                sort_order=idx,
+            )
+        )
+        created_count += 1
+
+    await _bump_menu_revision(db, venue_id)
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="MENU_CSV_IMPORTED",
+        target_type="menu",
+        target_id=menu_id,
+        after_json={
+            "strategy": body.strategy,
+            "created": created_count,
+            "updated": updated_count,
+            "skipped_errors": len(staged.get("errors", [])),
+        },
+        request=request,
+    )
+    await db.commit()
+    await delete_ephemeral_json(key)
+    await evict_public_menu_cache(str(venue_id))
+    return success_response(
+        {
+            "created": created_count,
+            "updated": updated_count,
+            "skipped_errors": len(staged.get("errors", [])),
+        }
+    )
+
+
 @router.patch("/api/v1/venues/{venue_id}/menu-items/{item_id}")
 async def update_menu_item(
     venue_id: uuid.UUID,
@@ -1191,10 +2034,35 @@ async def update_menu_item(
             raise AppError(404, "RESOURCE_NOT_FOUND", "Target category not found")
         item.category_id = body.category_id
 
+    if body.clear_sku:
+        item.sku = None
+    elif body.sku is not None:
+        sku_clean = _clean_sku(body.sku)
+        if sku_clean and sku_clean.lower() != (item.sku or "").lower():
+            sku_dup = (
+                await db.execute(
+                    select(MenuItem.id).where(
+                        MenuItem.venue_id == venue_id,
+                        MenuItem.deleted_at.is_(None),
+                        MenuItem.id != item_id,
+                        func.lower(MenuItem.sku) == sku_clean.lower(),
+                    )
+                )
+            ).scalar_one_or_none()
+            if sku_dup is not None:
+                raise AppError(
+                    409,
+                    "DUPLICATE_SKU",
+                    f"SKU '{sku_clean}' already exists in this venue",
+                    {"sku": "duplicate SKU"},
+                )
+        item.sku = sku_clean
     if body.name is not None:
         item.name = clean_text(body.name, max_len=120, field="name")
     if body.description is not None:
         item.description = clean_optional_text(body.description, max_len=500, field="description")
+    if body.translations_json is not None:
+        item.translations_json = _clean_translations(body.translations_json)
     if body.price_minor_units is not None:
         item.price_minor_units = body.price_minor_units
     if body.clear_compare_at_price:
@@ -1351,8 +2219,10 @@ async def duplicate_menu_item(
         organization_id=actor.organization_id,
         venue_id=venue_id,
         category_id=orig.category_id,
+        sku=None,
         name=copy_name,
         description=orig.description,
+        translations_json=dict(orig.translations_json or {}),
         price_minor_units=orig.price_minor_units,
         compare_at_price_minor_units=orig.compare_at_price_minor_units,
         image_asset_id=orig.image_asset_id,

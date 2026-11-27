@@ -6,12 +6,13 @@ import hashlib
 import hmac
 import io
 import time
+import zipfile
 from collections.abc import Sequence
 from urllib.parse import urlparse
 
 import segno
 from PIL import Image, ImageDraw, ImageFont
-from reportlab.lib.pagesizes import A4, LETTER
+from reportlab.lib.pagesizes import A4, A6, LETTER
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
@@ -150,16 +151,28 @@ def generate_qr_pdf_bytes(
     Generate multi-table cut-guided PDF tent-card sheet via reportlab.
     Each card tuple: (table_code, table_label, url).
     """
-    page_size = LETTER if layout == "LETTER_4UP" else A4
-    cols = 2
-    rows = 3 if layout == "A4_6UP" else 2
+    page_size = LETTER if layout == "LETTER_4UP" else (A6 if layout == "A6_1UP" else A4)
+    if layout == "A6_1UP":
+        cols, rows = 1, 1
+        margin_x = 8 * mm
+        margin_y = 8 * mm
+    elif layout == "A4_STICKER_12UP":
+        cols, rows = 3, 4
+        margin_x = 8 * mm
+        margin_y = 8 * mm
+    elif layout == "A4_6UP":
+        cols, rows = 2, 3
+        margin_x = 12 * mm
+        margin_y = 12 * mm
+    else:
+        cols, rows = 2, 2
+        margin_x = 12 * mm
+        margin_y = 12 * mm
     per_page = cols * rows
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=page_size)
     page_w, page_h = page_size
-    margin_x = 12 * mm
-    margin_y = 12 * mm
     cell_w = (page_w - 2 * margin_x) / cols
     cell_h = (page_h - 2 * margin_y) / rows
 
@@ -212,4 +225,32 @@ def generate_qr_pdf_bytes(
         c.drawCentredString(cx, y0 + 7 * mm, domain_hint)
 
     c.save()
+    return buf.getvalue()
+
+
+def generate_qr_zip_bytes(
+    cards: Sequence[tuple[str, str, str]],
+    *,
+    venue_name: str,
+    fmt: str = "png",
+    framed: bool = True,
+) -> bytes:
+    """Generate in-memory ZIP archive containing SVG and/or framed PNG QR files for selected tables."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for table_code, label, url in cards:
+            safe_code = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in table_code)
+            if fmt in ("svg", "both"):
+                zf.writestr(f"qr-{safe_code}.svg", generate_qr_svg_bytes(url))
+            if fmt in ("png", "both"):
+                zf.writestr(
+                    f"qr-{safe_code}.png",
+                    generate_qr_png_bytes(
+                        url,
+                        framed=framed,
+                        venue_name=venue_name,
+                        table_label=label,
+                        size_px=1024,
+                    ),
+                )
     return buf.getvalue()

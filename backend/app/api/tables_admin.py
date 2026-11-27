@@ -28,11 +28,22 @@ from app.core.valkey_client import (
     publish_cv_control,
 )
 from app.db.base import get_db, uuid7
-from app.db.models import Alert, Camera, DiningTable, TableQRCode, Venue, WaitlistEntry
+from app.db.models import (
+    Alert,
+    Camera,
+    DiningTable,
+    MLReviewItem,
+    QrScanDailyStat,
+    TableQRCode,
+    TableStateEvent,
+    Venue,
+    WaitlistEntry,
+)
 from app.schemas.tables_qr import (
     BulkCreateTablesRequest,
     BulkUpdateTablesRequest,
     CreateTableRequest,
+    RestoreTableRequest,
     UpdateTableRequest,
 )
 from app.services.audit import write_audit_log
@@ -74,6 +85,7 @@ def _admin_table_dict(t: DiningTable, qr: TableQRCode | None = None) -> dict[str
         "current_guest_count": t.current_guest_count,
         "version": t.version,
         "created_at": t.created_at.isoformat(),
+        "deleted_at": t.deleted_at.isoformat() if t.deleted_at else None,
         "qr_token": qr.token if qr else None,
         "qr_url": _qr_url(qr.token) if qr else None,
         "qr_status": qr.status if qr else None,
@@ -88,13 +100,13 @@ async def list_venue_tables(
     db: Annotated[AsyncSession, Depends(get_db)],
     search: Annotated[str | None, Query(max_length=80)] = None,
     section: Annotated[str | None, Query(max_length=60)] = None,
-    status: Annotated[str, Query(pattern="^(active|inactive|all)$")] = "all",
+    status: Annotated[str, Query(pattern="^(active|inactive|archived|all)$")] = "all",
     mapped: Annotated[str, Query(pattern="^(mapped|unmapped|all)$")] = "all",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> JSONResponse:
     """API-024 (list): List and filter venue tables alongside active QR status and summary KPIs."""
-    all_rows = (
+    non_deleted_rows = (
         (
             await db.execute(
                 select(DiningTable)
@@ -109,6 +121,24 @@ async def list_venue_tables(
         .scalars()
         .all()
     )
+    if status == "archived":
+        all_rows = (
+            (
+                await db.execute(
+                    select(DiningTable)
+                    .where(
+                        DiningTable.venue_id == venue_id,
+                        DiningTable.organization_id == actor.organization_id,
+                        DiningTable.deleted_at.is_not(None),
+                    )
+                    .order_by(DiningTable.deleted_at.desc(), DiningTable.table_code.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        all_rows = non_deleted_rows
 
     qr_rows = (
         (
@@ -125,15 +155,15 @@ async def list_venue_tables(
     )
     qr_by_table = {q.table_id: q for q in qr_rows}
 
-    total_active = sum(1 for t in all_rows if t.is_active)
-    total_seats = sum(t.seat_capacity for t in all_rows if t.is_active)
+    total_active = sum(1 for t in non_deleted_rows if t.is_active)
+    total_seats = sum(t.seat_capacity for t in non_deleted_rows if t.is_active)
     mapped_count = sum(
         1
-        for t in all_rows
+        for t in non_deleted_rows
         if t.is_active and t.camera_id is not None and t.polygon_json and len(t.polygon_json) >= 3
     )
-    inactive_count = sum(1 for t in all_rows if not t.is_active)
-    sections = sorted({t.section_name for t in all_rows})
+    inactive_count = sum(1 for t in non_deleted_rows if not t.is_active)
+    sections = sorted({t.section_name for t in non_deleted_rows})
 
     filtered: list[DiningTable] = []
     search_q = search.strip().lower() if search else None
@@ -794,3 +824,269 @@ async def delete_table(
         },
     )
     return success_response({"deleted": True, "table_id": str(table_id)})
+
+
+@router.post("/api/v1/venues/{venue_id}/tables/{table_id}/duplicate", status_code=201)
+async def duplicate_table(
+    venue_id: uuid.UUID,
+    table_id: uuid.UUID,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="tables.manage"))],
+    _flag: Annotated[None, Depends(require_feature_flag("table_advanced_enabled"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Duplicate table configuration with next available code + fresh 128-bit QR."""
+    orig = (
+        await db.execute(
+            select(DiningTable).where(
+                DiningTable.id == table_id,
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+                DiningTable.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if orig is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Table not found")
+
+    existing_codes = {
+        c.upper()
+        for c in (
+            await db.execute(
+                select(DiningTable.table_code).where(
+                    DiningTable.venue_id == venue_id,
+                    DiningTable.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+    if len(existing_codes) >= MAX_TABLES_PER_VENUE:
+        raise AppError(422, "LIMIT_EXCEEDED", "Maximum table limit reached for this venue")
+
+    candidate = f"{orig.table_code[:14]}-COPY"
+    idx = 2
+    while candidate.upper() in existing_codes:
+        suffix = f"-C{idx}"
+        candidate = f"{orig.table_code[: 20 - len(suffix)]}{suffix}"
+        idx += 1
+
+    clone = DiningTable(
+        id=uuid7(),
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        camera_id=None,
+        table_code=candidate,
+        display_name=f"{orig.display_name} (Copy)"[:80] if orig.display_name else None,
+        section_name=orig.section_name,
+        min_capacity=orig.min_capacity,
+        seat_capacity=orig.seat_capacity,
+        polygon_json=None,
+        floor_x=min(0.95, max(0.05, orig.floor_x + 0.04)),
+        floor_y=min(0.95, max(0.05, orig.floor_y + 0.04)),
+        shape=orig.shape,
+        is_active=orig.is_active,
+        is_combinable=orig.is_combinable,
+        table_notes=orig.table_notes,
+        sort_order=orig.sort_order + 1,
+    )
+    db.add(clone)
+    await db.flush()
+
+    qr = TableQRCode(
+        id=uuid7(),
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        table_id=clone.id,
+        token=secrets.token_urlsafe(16),
+        status="ACTIVE",
+        created_by=actor.id,
+    )
+    db.add(qr)
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="TABLE_DUPLICATED",
+        target_type="table",
+        target_id=clone.id,
+        after_json={"source_table_id": str(orig.id), "table_code": clone.table_code},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(clone)
+    await db.refresh(qr)
+    payload = _admin_table_dict(clone, qr)
+    await ws_hub.broadcast(str(venue_id), {"type": "table.created", "data": payload})
+    return success_response(payload, status_code=201)
+
+
+@router.post("/api/v1/venues/{venue_id}/tables/{table_id}/restore")
+async def restore_archived_table(
+    venue_id: uuid.UUID,
+    table_id: uuid.UUID,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="tables.manage"))],
+    _flag: Annotated[None, Depends(require_feature_flag("table_advanced_enabled"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: RestoreTableRequest | None = None,
+) -> JSONResponse:
+    """Restore an archived table (handles E-05 table_code conflicts with optional new_table_code)."""
+    tbl = (
+        await db.execute(
+            select(DiningTable).where(
+                DiningTable.id == table_id,
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+                DiningTable.deleted_at.is_not(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if tbl is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Archived table not found")
+
+    target_code = (
+        normalize_table_code(body.new_table_code)
+        if body and body.new_table_code
+        else tbl.table_code.upper()
+    )
+    conflict = (
+        await db.execute(
+            select(DiningTable.id).where(
+                DiningTable.venue_id == venue_id,
+                DiningTable.deleted_at.is_(None),
+                DiningTable.id != table_id,
+                func.upper(DiningTable.table_code) == target_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise AppError(
+            409,
+            "DUPLICATE_TABLE_CODE",
+            f"Table code '{target_code}' is in use; provide a new_table_code to restore",
+            {"new_table_code": "already in use"},
+        )
+
+    tbl.table_code = target_code
+    tbl.deleted_at = None
+    tbl.is_active = True
+    tbl.current_state = "FREE"
+    tbl.version += 1
+
+    active_qr = (
+        await db.execute(
+            select(TableQRCode).where(
+                TableQRCode.table_id == tbl.id,
+                TableQRCode.status == "ACTIVE",
+            )
+        )
+    ).scalar_one_or_none()
+    if active_qr is None:
+        active_qr = TableQRCode(
+            id=uuid7(),
+            organization_id=actor.organization_id,
+            venue_id=venue_id,
+            table_id=tbl.id,
+            token=secrets.token_urlsafe(16),
+            status="ACTIVE",
+            created_by=actor.id,
+        )
+        db.add(active_qr)
+
+    await db.execute(
+        update(Venue).where(Venue.id == venue_id).values(menu_revision=Venue.menu_revision + 1)
+    )
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="TABLE_RESTORED",
+        target_type="table",
+        target_id=tbl.id,
+        after_json={"table_code": tbl.table_code},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(tbl)
+    await db.refresh(active_qr)
+    payload = _admin_table_dict(tbl, active_qr)
+    await ws_hub.broadcast(str(venue_id), {"type": "table.created", "data": payload})
+    return success_response(payload)
+
+
+@router.delete("/api/v1/venues/{venue_id}/tables/{table_id}/purge")
+async def purge_archived_table(
+    venue_id: uuid.UUID,
+    table_id: uuid.UUID,
+    request: Request,
+    actor: Annotated[Any, Depends(require_venue_role(capability="tables.manage"))],
+    _flag: Annotated[None, Depends(require_feature_flag("table_advanced_enabled"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Permanently purge zero-history archived table; block with 409 TABLE_HAS_HISTORY otherwise (E-07)."""
+    tbl = (
+        await db.execute(
+            select(DiningTable).where(
+                DiningTable.id == table_id,
+                DiningTable.venue_id == venue_id,
+                DiningTable.organization_id == actor.organization_id,
+                DiningTable.deleted_at.is_not(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if tbl is None:
+        raise AppError(404, "RESOURCE_NOT_FOUND", "Archived table not found")
+
+    has_history = False
+    history_checks: list[tuple[Any, Any]] = [
+        (TableStateEvent, TableStateEvent.table_id),
+        (Alert, Alert.table_id),
+        (WaitlistEntry, WaitlistEntry.assigned_table_id),
+        (MLReviewItem, MLReviewItem.table_id),
+        (QrScanDailyStat, QrScanDailyStat.table_id),
+    ]
+    for model_cls, col in history_checks:
+        cnt = (
+            await db.execute(select(func.count()).select_from(model_cls).where(col == table_id))
+        ).scalar_one()
+        if int(cnt or 0) > 0:
+            has_history = True
+            break
+
+    if has_history:
+        raise AppError(
+            409,
+            "TABLE_HAS_HISTORY",
+            f"Table {tbl.table_code} has historical operational records and cannot be purged",
+            {"table_id": str(table_id)},
+        )
+
+    qr_rows = (
+        await db.execute(select(TableQRCode).where(TableQRCode.table_id == table_id))
+    ).scalars().all()
+    tokens = [q.token for q in qr_rows]
+    for q in qr_rows:
+        await db.delete(q)
+    await db.flush()
+    code_copy = tbl.table_code
+    await db.delete(tbl)
+
+    await write_audit_log(
+        db,
+        organization_id=actor.organization_id,
+        venue_id=venue_id,
+        actor_user_id=actor.id,
+        action="TABLE_PURGED",
+        target_type="table",
+        target_id=table_id,
+        before_json={"table_code": code_copy},
+        request=request,
+    )
+    await db.commit()
+    for tok in tokens:
+        await evict_public_qr_cache(tok)
+    return success_response({"purged": True, "table_id": str(table_id)})
