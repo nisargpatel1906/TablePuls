@@ -40,7 +40,9 @@ export default function TableDetailPage() {
             Back to Live Floor Map
           </Link>
         </div>
-        {venueId && tableId && <TableDetailDrawer venueId={venueId} tableId={tableId} standalone />}
+        {!loading && user && venueId && tableId && (
+          <TableDetailDrawer venueId={venueId} tableId={tableId} standalone />
+        )}
       </div>
     </AppShell>
   );

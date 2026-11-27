@@ -7,6 +7,7 @@ import { hasCapability, defaultHomeForRole } from "@/lib/rbac";
 import { apiFetch, ApiError, setAccessToken } from "@/lib/api";
 import { useVenueRealtime } from "@/hooks/useVenueRealtime";
 
+import { TableDetailDrawer } from "@/components/TableDetailDrawer";
 import { AuthProvider, useAuth } from "@/providers/AuthProvider";
 
 describe("Stage 6 TablePulse UI Foundation", () => {
@@ -209,6 +210,37 @@ describe("Stage 6 TablePulse UI Foundation", () => {
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"));
     expect(screen.getByTestId("err").textContent).toBe("Venue access denied");
     expect(wsCreated).toBe(0);
+    vi.unstubAllGlobals();
+  });
+
+  it("defers TableDetailDrawer data fetch until AuthProvider finishes hydrating session", async () => {
+    const calledUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        calledUrls.push(url);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              data: { bootstrap_required: false, demo_mode: false, has_session: false },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <TableDetailDrawer venueId="v1" tableId="t1" standalone />
+      </AuthProvider>,
+    );
+    await waitFor(() =>
+      expect(calledUrls.some((u) => u.includes("/api/v1/auth/bootstrap-status"))).toBe(true),
+    );
+    expect(calledUrls.some((u) => u.includes("/api/v1/venues/v1/tables/t1"))).toBe(false);
     vi.unstubAllGlobals();
   });
 });

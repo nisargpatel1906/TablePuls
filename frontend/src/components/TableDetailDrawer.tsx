@@ -33,7 +33,7 @@ export function TableDetailDrawer({
   onClose,
   onUpdated,
 }: TableDetailDrawerProps) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [detail, setDetail] = useState<TableDetailData | null>(null);
   const [snapUrl, setSnapUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,8 +76,10 @@ export function TableDetailDrawer({
   }, [venueId, tableId]);
 
   useEffect(() => {
-    void loadDetail();
-  }, [loadDetail]);
+    if (!authLoading && user) {
+      void loadDetail();
+    }
+  }, [authLoading, user, loadDetail]);
 
   useEffect(() => {
     if (!detail || detail.table.id !== tableId || !detail.latest_snapshot_available) {
