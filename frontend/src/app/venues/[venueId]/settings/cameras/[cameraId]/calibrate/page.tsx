@@ -9,6 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import type { CalibrationTable } from "@/components/PolygonEditorCanvas";
 import { apiFetch, ApiError } from "@/lib/api";
 import { hasCapability } from "@/lib/rbac";
+import { nextAvailableTableCode } from "@/lib/table-codes";
 import { useAuth } from "@/providers/AuthProvider";
 import type { PolygonPoint } from "@/types/floor";
 
@@ -82,6 +83,7 @@ export default function PolygonCalibrationPage() {
   }
 
   const [tables, setTables] = useState<CalibrationTable[]>([]);
+  const [venueTableCodes, setVenueTableCodes] = useState<string[]>([]);
   const [unassignedTables, setUnassignedTables] = useState<UnassignedTableOption[]>([]);
   const [exclusionZones, setExclusionZones] = useState<PolygonPoint[][]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -106,10 +108,12 @@ export default function PolygonCalibrationPage() {
     try {
       const polyRes = await apiFetch<{
         exclusion_polygons_json: PolygonPoint[][];
+        venue_table_codes?: string[];
         tables: CalibrationTable[];
         unassigned_tables?: UnassignedTableOption[];
       }>(`/api/v1/venues/${venueId}/cameras/${cameraId}/polygons`);
       setTables(roundTables(polyRes.tables));
+      setVenueTableCodes(polyRes.venue_table_codes || []);
       setUnassignedTables(polyRes.unassigned_tables || []);
       setExclusionZones(polyRes.exclusion_polygons_json || []);
 
@@ -147,7 +151,11 @@ export default function PolygonCalibrationPage() {
       setMode("edit");
       return;
     }
-    const nextCode = `T${tables.length + 1}`;
+    const nextCode = nextAvailableTableCode([
+      ...venueTableCodes,
+      ...tables.map((t) => t.table_code),
+      ...unassignedTables.map((u) => u.table_code),
+    ]);
     const avgX = draftPoints.reduce((s, p) => s + p.x, 0) / Math.max(1, draftPoints.length);
     const avgY = draftPoints.reduce((s, p) => s + p.y, 0) / Math.max(1, draftPoints.length);
     const nextTbl: CalibrationTable = {
@@ -170,8 +178,13 @@ export default function PolygonCalibrationPage() {
   function addDefaultBoxTable() {
     const offset = (tables.length % 4) * 0.16;
     const x0 = Math.min(0.7, 0.1 + offset);
+    const nextCode = nextAvailableTableCode([
+      ...venueTableCodes,
+      ...tables.map((t) => t.table_code),
+      ...unassignedTables.map((u) => u.table_code),
+    ]);
     const nextTbl: CalibrationTable = {
-      table_code: `T${tables.length + 1}`,
+      table_code: nextCode,
       section_name: "Main",
       seat_capacity: 4,
       polygon_json: [
@@ -248,6 +261,9 @@ export default function PolygonCalibrationPage() {
         }),
       });
       setTables(roundTables(res.tables));
+      setVenueTableCodes((prev) =>
+        Array.from(new Set([...prev, ...res.tables.map((t) => t.table_code)])),
+      );
       setExclusionZones(res.exclusion_polygons_json);
       setSuccessMsg(`Saved calibration for ${res.tables.length} tables.`);
     } catch (err) {

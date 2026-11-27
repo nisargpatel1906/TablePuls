@@ -292,3 +292,22 @@ async def test_polygons_validation_and_mediamtx_auth(
         headers={"Authorization": f"Bearer {host_tok}"},
     )
     assert host_denied.status_code == 403
+
+    # Multi-camera calibration returns venue_table_codes across all cameras in the venue
+    cam2 = await client.post(
+        f"/api/v1/venues/{venue_id}/cameras",
+        headers=hdr,
+        json={
+            "name": "Patio Cam 2",
+            "stream_type": "RTSP",
+            "stream_url": "rtsp://10.0.0.12:554/stream2",
+        },
+    )
+    assert cam2.status_code == 201
+    cam2_id = cam2.json()["data"]["id"]
+    cam2_poly = await client.get(
+        f"/api/v1/venues/{venue_id}/cameras/{cam2_id}/polygons", headers=hdr
+    )
+    assert cam2_poly.status_code == 200
+    assert cam2_poly.json()["data"]["tables"] == []
+    assert "T01" in cam2_poly.json()["data"]["venue_table_codes"]

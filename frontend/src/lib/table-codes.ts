@@ -14,3 +14,16 @@ export function previewBulkCodes(
   }
   return res;
 }
+
+export function nextAvailableTableCode(existingCodes: Iterable<string>): string {
+  const used = new Set<string>();
+  for (const code of existingCodes) {
+    const clean = code.trim().toUpperCase();
+    if (clean) used.add(clean);
+  }
+  let idx = 1;
+  while (used.has(`T${idx}`) || used.has(`T${String(idx).padStart(2, "0")}`)) {
+    idx += 1;
+  }
+  return `T${idx}`;
+}

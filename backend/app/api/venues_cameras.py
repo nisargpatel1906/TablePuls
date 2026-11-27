@@ -631,10 +631,27 @@ async def get_polygons(
         .all()
     )
 
+    all_venue_codes = (
+        (
+            await db.execute(
+                select(DiningTable.table_code)
+                .where(
+                    DiningTable.venue_id == venue_id,
+                    DiningTable.organization_id == actor.organization_id,
+                    DiningTable.deleted_at.is_(None),
+                )
+                .order_by(DiningTable.table_code.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return success_response(
         {
             "camera_id": str(camera_id),
             "exclusion_polygons_json": cam.exclusion_polygons_json or [],
+            "venue_table_codes": sorted({str(c) for c in all_venue_codes}),
             "tables": [
                 {
                     "id": str(t.id),

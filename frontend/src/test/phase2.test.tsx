@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewBulkCodes } from "@/lib/table-codes";
+import { nextAvailableTableCode, previewBulkCodes } from "@/lib/table-codes";
 import {
   formatMinorUnits,
   minorUnitsToInputString,
@@ -26,5 +26,11 @@ describe("Phase 2 Currency & Table Utilities", () => {
     expect(previewBulkCodes("p", 1, 3, 2)).toEqual(["P01", "P02", "P03"]);
     expect(previewBulkCodes("booth", 8, 2, 3)).toEqual(["BOOTH008", "BOOTH009"]);
     expect(previewBulkCodes("", 1, 5, 2)).toEqual([]);
+  });
+
+  it("allocates next unique table code across existing venue and camera tables", () => {
+    expect(nextAvailableTableCode([])).toBe("T1");
+    expect(nextAvailableTableCode(["T01", "T02", "T03", "T4"])).toBe("T5");
+    expect(nextAvailableTableCode(["t1", "T2", "P01"])).toBe("T3");
   });
 });
