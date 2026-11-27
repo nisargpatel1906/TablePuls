@@ -25,7 +25,27 @@ class BootstrapRequest(StrictSchema):
 class LoginRequest(StrictSchema):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
-    totp_code: str | None = Field(default=None, min_length=6, max_length=8)
+    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
+
+
+class TwoFAEnrollRequest(StrictSchema):
+    challenge_token: str | None = Field(default=None, min_length=16, max_length=256)
+
+
+class TwoFAVerifyEnrollRequest(StrictSchema):
+    enroll_token: str = Field(min_length=16, max_length=256)
+    code: str = Field(min_length=6, max_length=16)
+    challenge_token: str | None = Field(default=None, min_length=16, max_length=256)
+
+
+class TwoFAVerifyLoginRequest(StrictSchema):
+    challenge_token: str = Field(min_length=16, max_length=256)
+    code: str = Field(min_length=6, max_length=16)
+
+
+class TwoFAReAuthRequest(StrictSchema):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=6, max_length=16)
 
 
 class ForgotPasswordRequest(StrictSchema):

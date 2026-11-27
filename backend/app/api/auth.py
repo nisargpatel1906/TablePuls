@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Header, Query, Request
+import pyotp
+import segno
+from fastapi import APIRouter, Body, Cookie, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +21,7 @@ from app.core.errors import AppError, success_response
 from app.core.rbac import get_current_user
 from app.core.security import (
     create_access_token,
+    decode_access_token,
     decrypt_field,
     encrypt_field,
     generate_opaque_token,
@@ -30,6 +35,7 @@ from app.core.valkey_client import (
     check_and_store_idempotency,
     check_rate_limit,
     get_valkey,
+    is_user_revoked,
     mark_user_revoked,
 )
 from app.db.base import get_db, uuid7
@@ -48,6 +54,10 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     ResetPasswordRequest,
+    TwoFAEnrollRequest,
+    TwoFAReAuthRequest,
+    TwoFAVerifyEnrollRequest,
+    TwoFAVerifyLoginRequest,
 )
 from app.services.audit import write_audit_log
 from app.services.email import send_email_if_configured
@@ -104,9 +114,148 @@ def _user_dict(user: User) -> dict[str, object]:
         "role": user.role,
         "assigned_venue_ids": [str(v) for v in (user.assigned_venue_ids or [])],
         "is_active": user.is_active,
+        "totp_enabled": bool(user.totp_enabled),
+        "recovery_codes_remaining": len(user.totp_recovery_codes_json or []),
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+_RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:
+    plain: list[str] = []
+    hashed: list[str] = []
+    for _ in range(count):
+        raw = "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(8))
+        formatted = f"{raw[:4]}-{raw[4:]}"
+        plain.append(formatted)
+        hashed.append(hash_password(formatted))
+    return plain, hashed
+
+
+def _verify_and_consume_2fa_code(user: User, raw_code: str) -> str | None:
+    """Verify either 6-digit TOTP or single-use recovery code; returns method or None."""
+    cleaned = raw_code.strip()
+    if cleaned.isdigit() and len(cleaned) == 6 and user.totp_secret_encrypted:
+        secret_b32 = decrypt_field(user.totp_secret_encrypted)
+        if verify_totp(secret_b32, cleaned):
+            return "totp"
+
+    norm = cleaned.upper().replace(" ", "")
+    if len(norm) == 8 and "-" not in norm:
+        norm = f"{norm[:4]}-{norm[4:]}"
+    stored = list(user.totp_recovery_codes_json or [])
+    for idx, code_hash in enumerate(stored):
+        if verify_password(norm, code_hash):
+            del stored[idx]
+            user.totp_recovery_codes_json = stored
+            return "recovery"
+    return None
+
+
+async def _issue_login_session(
+    db: AsyncSession,
+    user: User,
+    request: Request,
+    *,
+    action: str = "USER_LOGIN",
+    after_json: dict[str, object] | None = None,
+) -> JSONResponse:
+    raw_refresh, hash_refresh = generate_opaque_token()
+    family_id = uuid7()
+    db.add(
+        RefreshToken(
+            id=uuid7(),
+            organization_id=user.organization_id,
+            user_id=user.id,
+            token_type="REFRESH",
+            token_family_id=family_id,
+            token_hash=hash_refresh,
+            expires_at=datetime.now(UTC) + timedelta(days=get_settings().refresh_token_expire_days),
+        )
+    )
+    user.last_login_at = datetime.now(UTC)
+    await write_audit_log(
+        db,
+        organization_id=user.organization_id,
+        actor_user_id=user.id,
+        action=action,
+        target_type="user",
+        target_id=user.id,
+        after_json=after_json,
+        request=request,
+    )
+    await db.commit()
+
+    access_token = create_access_token(
+        user_id=user.id,
+        organization_id=user.organization_id,
+        role=user.role,
+    )
+    resp = success_response(
+        {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": get_settings().access_token_expire_minutes * 60,
+            "user": _user_dict(user),
+        }
+    )
+    _set_refresh_cookie(resp, raw_refresh)
+    return resp
+
+
+async def _resolve_user_or_setup_challenge(
+    db: AsyncSession,
+    request: Request,
+    challenge_token: str | None,
+) -> tuple[User, RefreshToken | None]:
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            payload = decode_access_token(token)
+            try:
+                user_id = uuid.UUID(str(payload["sub"]))
+                org_id = uuid.UUID(str(payload["org_id"]))
+            except (KeyError, ValueError) as exc:
+                raise AppError(401, "AUTH_UNAUTHORIZED", "Malformed token claims") from exc
+            if await is_user_revoked(str(user_id), int(payload.get("iat", 0))):
+                raise AppError(401, "AUTH_UNAUTHORIZED", "Session has been revoked")
+            user = (
+                await db.execute(
+                    select(User).where(User.id == user_id, User.organization_id == org_id)
+                )
+            ).scalar_one_or_none()
+            if user is None or not user.is_active:
+                raise AppError(401, "AUTH_UNAUTHORIZED", "Account inactive or not found")
+            return user, None
+
+    if challenge_token:
+        now = datetime.now(UTC)
+        tok = (
+            await db.execute(
+                select(RefreshToken).where(
+                    RefreshToken.token_hash == hash_token(challenge_token),
+                    RefreshToken.token_type == "2FA_CHALLENGE",
+                )
+            )
+        ).scalar_one_or_none()
+        if (
+            tok is None
+            or tok.revoked_at is not None
+            or tok.expires_at <= now
+            or (tok.metadata_json or {}).get("purpose") != "SETUP"
+            or tok.user_id is None
+        ):
+            raise AppError(401, "AUTH_UNAUTHORIZED", "Invalid or expired 2FA setup challenge")
+        user = (await db.execute(select(User).where(User.id == tok.user_id))).scalar_one_or_none()
+        if user is None or not user.is_active:
+            raise AppError(401, "AUTH_UNAUTHORIZED", "Account inactive or not found")
+        return user, tok
+
+    raise AppError(401, "AUTH_UNAUTHORIZED", "Authentication required")
 
 
 @router.get("/bootstrap-status")
@@ -250,52 +399,372 @@ async def login(
         await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True, increment=True)
         raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid email or password")
 
-    if user.totp_enabled and user.totp_secret_encrypted:
-        secret_b32 = decrypt_field(user.totp_secret_encrypted)
-        if not body.totp_code or not verify_totp(secret_b32, body.totp_code):
-            await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True, increment=True)
-            raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authentication code")
+    sys_set = (
+        await db.execute(
+            select(SystemSetting).where(SystemSetting.organization_id == user.organization_id)
+        )
+    ).scalar_one_or_none()
 
-    raw_refresh, hash_refresh = generate_opaque_token()
-    family_id = uuid7()
+    if user.totp_enabled and user.totp_secret_encrypted:
+        if body.totp_code:
+            method = _verify_and_consume_2fa_code(user, body.totp_code)
+            if method is None:
+                await check_rate_limit(acct_fail_key, 5, 900, fail_closed=True, increment=True)
+                raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authentication code")
+            return await _issue_login_session(
+                db,
+                user,
+                request,
+                action="TWO_FACTOR_RECOVERY_USED" if method == "recovery" else "USER_LOGIN",
+            )
+        raw_ch, ch_hash = generate_opaque_token()
+        db.add(
+            RefreshToken(
+                id=uuid7(),
+                organization_id=user.organization_id,
+                user_id=user.id,
+                token_type="2FA_CHALLENGE",
+                token_family_id=uuid7(),
+                token_hash=ch_hash,
+                metadata_json={"purpose": "LOGIN"},
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        await db.commit()
+        return success_response(
+            {
+                "requires_2fa": True,
+                "challenge_token": raw_ch,
+                "expires_in": 300,
+            }
+        )
+
+    if sys_set is not None and user.role in (sys_set.require_2fa_roles or []):
+        raw_ch, ch_hash = generate_opaque_token()
+        db.add(
+            RefreshToken(
+                id=uuid7(),
+                organization_id=user.organization_id,
+                user_id=user.id,
+                token_type="2FA_CHALLENGE",
+                token_family_id=uuid7(),
+                token_hash=ch_hash,
+                metadata_json={"purpose": "SETUP"},
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            )
+        )
+        await db.commit()
+        return success_response(
+            {
+                "requires_2fa_setup": True,
+                "challenge_token": raw_ch,
+                "expires_in": 600,
+                "role": user.role,
+            }
+        )
+
+    return await _issue_login_session(db, user, request)
+
+
+@router.post("/2fa/verify")
+async def verify_two_factor_login(
+    body: TwoFAVerifyLoginRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Verify TOTP or single-use recovery code against a login challenge token."""
+    client_ip = _client_ip(request)
+    ip_ok, ip_retry = await check_rate_limit(f"2fa:ip:{client_ip}", 20, 60, fail_closed=True)
+    if not ip_ok:
+        raise AppError(
+            429,
+            "RATE_LIMITED",
+            "Too many 2FA verification attempts. Please wait and try again.",
+            headers={"Retry-After": str(ip_retry)},
+        )
+
+    ch_hash = hash_token(body.challenge_token)
+    ch_fail_key = f"2fa:fail:{ch_hash[:16]}"
+    allowed, retry_after = await check_rate_limit(
+        ch_fail_key, 5, 300, fail_closed=True, increment=False
+    )
+    if not allowed:
+        raise AppError(
+            429,
+            "RATE_LIMITED",
+            "Too many failed 2FA attempts. Sign in again.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    now = datetime.now(UTC)
+    tok = (
+        await db.execute(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == ch_hash,
+                RefreshToken.token_type == "2FA_CHALLENGE",
+            )
+        )
+    ).scalar_one_or_none()
+    if (
+        tok is None
+        or tok.revoked_at is not None
+        or tok.expires_at <= now
+        or (tok.metadata_json or {}).get("purpose") != "LOGIN"
+        or tok.user_id is None
+    ):
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid or expired 2FA challenge")
+
+    user = (await db.execute(select(User).where(User.id == tok.user_id))).scalar_one_or_none()
+    if user is None or not user.is_active or not user.totp_enabled:
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authentication state")
+
+    method = _verify_and_consume_2fa_code(user, body.code)
+    if method is None:
+        await check_rate_limit(ch_fail_key, 5, 300, fail_closed=True, increment=True)
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid verification or recovery code")
+
+    tok.revoked_at = now
+    return await _issue_login_session(
+        db,
+        user,
+        request,
+        action="TWO_FACTOR_RECOVERY_USED" if method == "recovery" else "USER_LOGIN",
+        after_json={"two_factor_method": method},
+    )
+
+
+@router.post("/2fa/enroll")
+async def enroll_two_factor(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: Annotated[TwoFAEnrollRequest | None, Body()] = None,
+) -> JSONResponse:
+    """Start TOTP enrollment: returns offline QR SVG + Base32 manual key + enroll_token."""
+    challenge_token = body.challenge_token if body else None
+    user, _setup_tok = await _resolve_user_or_setup_challenge(db, request, challenge_token)
+
+    secret = pyotp.random_base32()
+    uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="TablePulse")
+    qr = segno.make(uri, error="m")
+    buf = io.BytesIO()
+    qr.save(buf, kind="svg", scale=5, border=2, xmldecl=False)
+    svg_bytes = buf.getvalue()
+    svg_text = svg_bytes.decode("utf-8")
+    qr_svg_data_uri = f"data:image/svg+xml;base64,{base64.b64encode(svg_bytes).decode('ascii')}"
+
+    raw_enroll, enroll_hash = generate_opaque_token()
     db.add(
         RefreshToken(
             id=uuid7(),
             organization_id=user.organization_id,
             user_id=user.id,
-            token_type="REFRESH",
-            token_family_id=family_id,
-            token_hash=hash_refresh,
-            expires_at=datetime.now(UTC) + timedelta(days=get_settings().refresh_token_expire_days),
+            token_type="2FA_CHALLENGE",
+            token_family_id=uuid7(),
+            token_hash=enroll_hash,
+            metadata_json={
+                "purpose": "ENROLL",
+                "secret_enc": base64.b64encode(encrypt_field(secret)).decode("ascii"),
+            },
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
         )
     )
-    user.last_login_at = datetime.now(UTC)
+    await db.commit()
+    return success_response(
+        {
+            "enroll_token": raw_enroll,
+            "secret": secret,
+            "provisioning_uri": uri,
+            "qr_svg_data_uri": qr_svg_data_uri,
+            "qr_svg": svg_text,
+            "expires_in": 600,
+        }
+    )
+
+
+@router.post("/2fa/verify-enroll")
+async def verify_enroll_two_factor(
+    body: TwoFAVerifyEnrollRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Verify initial TOTP code, activate 2FA, and issue 8 one-time recovery codes."""
+    user, setup_tok = await _resolve_user_or_setup_challenge(db, request, body.challenge_token)
+    now = datetime.now(UTC)
+    enroll_tok = (
+        await db.execute(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == hash_token(body.enroll_token),
+                RefreshToken.token_type == "2FA_CHALLENGE",
+                RefreshToken.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if (
+        enroll_tok is None
+        or enroll_tok.revoked_at is not None
+        or enroll_tok.expires_at <= now
+        or (enroll_tok.metadata_json or {}).get("purpose") != "ENROLL"
+    ):
+        raise AppError(400, "TOKEN_EXPIRED", "Enrollment token is invalid or expired")
+
+    secret_enc_b64 = str((enroll_tok.metadata_json or {}).get("secret_enc", ""))
+    secret = decrypt_field(base64.b64decode(secret_enc_b64))
+    code_clean = body.code.strip()
+    if not code_clean.isdigit() or len(code_clean) != 6 or not verify_totp(secret, code_clean):
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Invalid 6-digit verification code",
+            {"code": "invalid 6-digit authenticator code"},
+        )
+
+    plain_codes, hashed_codes = _generate_recovery_codes(8)
+    user.totp_enabled = True
+    user.totp_secret_encrypted = encrypt_field(secret)
+    user.totp_recovery_codes_json = hashed_codes
+    enroll_tok.revoked_at = now
+
+    if setup_tok is not None:
+        setup_tok.revoked_at = now
+        raw_refresh, hash_refresh = generate_opaque_token()
+        db.add(
+            RefreshToken(
+                id=uuid7(),
+                organization_id=user.organization_id,
+                user_id=user.id,
+                token_type="REFRESH",
+                token_family_id=uuid7(),
+                token_hash=hash_refresh,
+                expires_at=now + timedelta(days=get_settings().refresh_token_expire_days),
+            )
+        )
+        user.last_login_at = now
+        await write_audit_log(
+            db,
+            organization_id=user.organization_id,
+            actor_user_id=user.id,
+            action="TWO_FACTOR_ENABLED",
+            target_type="user",
+            target_id=user.id,
+            after_json={"enforced_setup": True},
+            request=request,
+        )
+        await db.commit()
+        access_token = create_access_token(
+            user_id=user.id,
+            organization_id=user.organization_id,
+            role=user.role,
+        )
+        resp = success_response(
+            {
+                "totp_enabled": True,
+                "recovery_codes": plain_codes,
+                "access_token": access_token,
+                "token_type": "bearer",
+                "expires_in": get_settings().access_token_expire_minutes * 60,
+                "user": _user_dict(user),
+            }
+        )
+        _set_refresh_cookie(resp, raw_refresh)
+        return resp
+
     await write_audit_log(
         db,
         organization_id=user.organization_id,
         actor_user_id=user.id,
-        action="USER_LOGIN",
+        action="TWO_FACTOR_ENABLED",
+        target_type="user",
+        target_id=user.id,
+        after_json={"enforced_setup": False},
+        request=request,
+    )
+    await db.commit()
+    return success_response(
+        {
+            "totp_enabled": True,
+            "recovery_codes": plain_codes,
+            "user": _user_dict(user),
+        }
+    )
+
+
+@router.post("/2fa/recovery-codes")
+async def regenerate_recovery_codes(
+    body: TwoFAReAuthRequest,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Regenerate 8 one-time recovery codes (requires current password + TOTP)."""
+    if not user.totp_enabled or not user.totp_secret_encrypted:
+        raise AppError(400, "VALIDATION_ERROR", "Two-factor authentication is not enabled")
+    if not verify_password(body.password, user.password_hash):
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid password")
+    secret = decrypt_field(user.totp_secret_encrypted)
+    if not verify_totp(secret, body.code.strip()):
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authenticator code")
+
+    plain_codes, hashed_codes = _generate_recovery_codes(8)
+    user.totp_recovery_codes_json = hashed_codes
+    await write_audit_log(
+        db,
+        organization_id=user.organization_id,
+        actor_user_id=user.id,
+        action="TWO_FACTOR_RECOVERY_REGENERATED",
         target_type="user",
         target_id=user.id,
         request=request,
     )
     await db.commit()
-
-    access_token = create_access_token(
-        user_id=user.id,
-        organization_id=user.organization_id,
-        role=user.role,
-    )
-    resp = success_response(
+    return success_response(
         {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "expires_in": get_settings().access_token_expire_minutes * 60,
+            "recovery_codes": plain_codes,
             "user": _user_dict(user),
         }
     )
-    _set_refresh_cookie(resp, raw_refresh)
-    return resp
+
+
+@router.post("/2fa/disable")
+async def disable_two_factor(
+    body: TwoFAReAuthRequest,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Disable TOTP 2FA with password + code re-auth unless blocked by org role policy."""
+    if not user.totp_enabled:
+        raise AppError(400, "VALIDATION_ERROR", "Two-factor authentication is already disabled")
+    if not verify_password(body.password, user.password_hash):
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid password")
+    if _verify_and_consume_2fa_code(user, body.code) is None:
+        raise AppError(401, "AUTH_INVALID_CREDENTIALS", "Invalid authenticator or recovery code")
+
+    sys_set = (
+        await db.execute(
+            select(SystemSetting).where(SystemSetting.organization_id == user.organization_id)
+        )
+    ).scalar_one_or_none()
+    if sys_set is not None and user.role in (sys_set.require_2fa_roles or []):
+        raise AppError(
+            403,
+            "POLICY_REQUIRED",
+            f"Organization policy requires 2FA for role {user.role}",
+        )
+
+    user.totp_enabled = False
+    user.totp_secret_encrypted = None
+    user.totp_recovery_codes_json = []
+    await write_audit_log(
+        db,
+        organization_id=user.organization_id,
+        actor_user_id=user.id,
+        action="TWO_FACTOR_DISABLED",
+        target_type="user",
+        target_id=user.id,
+        request=request,
+    )
+    await db.commit()
+    return success_response({"totp_enabled": False, "user": _user_dict(user)})
 
 
 @router.post("/demo-login")
@@ -891,9 +1360,29 @@ async def get_me(
     if user.role != "OWNER":
         q = q.where(Venue.id.in_(user.assigned_venue_ids or []))
     venues = (await db.execute(q)).scalars().all()
+    sys_set = (
+        await db.execute(
+            select(SystemSetting).where(SystemSetting.organization_id == user.organization_id)
+        )
+    ).scalar_one_or_none()
     return success_response(
         {
             "user": _user_dict(user),
+            "policies": {
+                "require_2fa_roles": list(sys_set.require_2fa_roles or []) if sys_set else [],
+                "managers_can_manage_tables": (
+                    sys_set.managers_can_manage_tables if sys_set else True
+                ),
+                "managers_can_manage_menu": (
+                    sys_set.managers_can_manage_menu if sys_set else True
+                ),
+                "admins_can_manage_tables": (
+                    sys_set.admins_can_manage_tables if sys_set else True
+                ),
+                "admins_can_manage_menu": (
+                    sys_set.admins_can_manage_menu if sys_set else True
+                ),
+            },
             "venues": [
                 {
                     "id": str(v.id),

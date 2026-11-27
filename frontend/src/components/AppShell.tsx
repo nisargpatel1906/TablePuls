@@ -11,6 +11,7 @@ import {
   CheckSquare,
   Clock,
   Grid2x2,
+  KeyRound,
   Languages,
   LayoutGrid,
   LogOut,
@@ -244,7 +245,7 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between min-h-[30px] px-2.5 py-0.5 rounded-xl text-[12.5px] font-medium transition ${
+                className={`flex items-center justify-between min-h-[44px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
                   active
                     ? "bg-[var(--tp-accent)] text-white"
                     : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
@@ -275,7 +276,7 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2 min-h-[30px] px-2.5 py-0.5 rounded-xl text-[12.5px] font-medium transition ${
+                    className={`flex items-center gap-2 min-h-[44px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
                       active
                         ? "bg-[var(--tp-accent)] text-white"
                         : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
@@ -290,14 +291,27 @@ export function AppShell({
           )}
         </nav>
 
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="mt-1 flex items-center gap-2 min-h-[32px] px-2.5 rounded-xl text-[12.5px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
-        >
-          <LogOut className="h-4 w-4" aria-hidden="true" />
-          {t(locale, "action.sign_out")}
-        </button>
+        <div className="mt-1 border-t border-[var(--tp-separator)] pt-1 space-y-0.5">
+          <Link
+            href="/account/security"
+            className={`flex items-center gap-2 min-h-[44px] px-2.5 rounded-xl text-[12.5px] font-medium transition ${
+              pathname === "/account/security"
+                ? "bg-[var(--tp-accent)] text-white"
+                : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
+            }`}
+          >
+            <KeyRound className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {t(locale, "nav.security")}
+          </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-2 min-h-[44px] px-2.5 rounded-xl text-[12.5px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
+          >
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            {t(locale, "action.sign_out")}
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Column */}
@@ -471,6 +485,14 @@ export function AppShell({
                   </Link>
                 );
               })}
+              <Link
+                href="/account/security"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 min-h-[44px] px-3 rounded-2xl text-sm font-medium hover:bg-[var(--tp-inset-field)]"
+              >
+                <KeyRound className="h-4 w-4" aria-hidden="true" />
+                {t(locale, "nav.security")}
+              </Link>
             </div>
             <button
               type="button"

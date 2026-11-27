@@ -5,15 +5,25 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   apiFetch,
   type AuthUser,
+  type OrgPolicies,
   refreshAccessToken,
   setAccessToken,
   type VenueSummary,
 } from "@/lib/api";
 import type { Locale } from "@/lib/i18n";
 
+const DEFAULT_POLICIES: OrgPolicies = {
+  require_2fa_roles: [],
+  managers_can_manage_tables: true,
+  managers_can_manage_menu: true,
+  admins_can_manage_tables: true,
+  admins_can_manage_menu: true,
+};
+
 interface AuthContextValue {
   user: AuthUser | null;
   venues: VenueSummary[];
+  policies: OrgPolicies;
   loading: boolean;
   demoMode: boolean;
   bootstrapRequired: boolean;
@@ -42,6 +52,7 @@ const queryClient = new QueryClient({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [venues, setVenues] = useState<VenueSummary[]>([]);
+  const [policies, setPolicies] = useState<OrgPolicies>(DEFAULT_POLICIES);
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(
     process.env.NEXT_PUBLIC_DEMO_MODE === "true",
@@ -53,14 +64,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSessionData = useCallback(async () => {
     try {
-      const me = await apiFetch<{ user: AuthUser; venues: VenueSummary[] }>(
-        "/api/v1/auth/me",
-      );
+      const me = await apiFetch<{
+        user: AuthUser;
+        venues: VenueSummary[];
+        policies?: OrgPolicies;
+      }>("/api/v1/auth/me");
       setUser(me.user);
       setVenues(me.venues);
+      if (me.policies) {
+        setPolicies(me.policies);
+      }
     } catch {
       setUser(null);
       setVenues([]);
+      setPolicies(DEFAULT_POLICIES);
     }
   }, []);
 
@@ -139,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccessToken(null);
       setUser(null);
       setVenues([]);
+      setPolicies(DEFAULT_POLICIES);
     }
   }, []);
 
@@ -160,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         value={{
           user,
           venues,
+          policies,
           loading,
           demoMode,
           bootstrapRequired,

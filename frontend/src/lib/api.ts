@@ -8,6 +8,16 @@ export interface AuthUser {
   role: Role;
   assigned_venue_ids: string[];
   is_active: boolean;
+  totp_enabled?: boolean;
+  recovery_codes_remaining?: number;
+}
+
+export interface OrgPolicies {
+  require_2fa_roles: Role[];
+  managers_can_manage_tables: boolean;
+  managers_can_manage_menu: boolean;
+  admins_can_manage_tables: boolean;
+  admins_can_manage_menu: boolean;
 }
 
 export interface VenueSummary {

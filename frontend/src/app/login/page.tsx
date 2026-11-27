@@ -22,6 +22,22 @@ function LoginFormInner() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [retryCountdown, setRetryCountdown] = useState<number>(0);
+
+  // Two-step 2FA state
+  const [twoFaChallenge, setTwoFaChallenge] = useState<string | null>(null);
+  const [twoFaCode, setTwoFaCode] = useState("");
+  const [setupChallenge, setSetupChallenge] = useState<string | null>(null);
+  const [enrollData, setEnrollData] = useState<{
+    enroll_token: string;
+    secret: string;
+    qr_svg_data_uri: string;
+  } | null>(null);
+  const [setupVerifyCode, setSetupVerifyCode] = useState("");
+  const [issuedRecoveryCodes, setIssuedRecoveryCodes] = useState<string[] | null>(null);
+  const [pendingSession, setPendingSession] = useState<{
+    access_token: string;
+    user: AuthUser;
+  } | null>(null);
   const errorBannerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,18 +75,47 @@ function LoginFormInner() {
     setErrorMsg(null);
     setSubmitting(true);
     try {
-      const res = await apiFetch<{ access_token: string; user: AuthUser }>(
-        "/api/v1/auth/login",
-        {
+      const res = await apiFetch<{
+        access_token?: string;
+        user?: AuthUser;
+        requires_2fa?: boolean;
+        requires_2fa_setup?: boolean;
+        challenge_token?: string;
+      }>("/api/v1/auth/login", {
+        method: "POST",
+        skipAuth: true,
+        retryOn401: false,
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+
+      if (res.requires_2fa && res.challenge_token) {
+        setTwoFaChallenge(res.challenge_token);
+        setTwoFaCode("");
+        return;
+      }
+
+      if (res.requires_2fa_setup && res.challenge_token) {
+        setSetupChallenge(res.challenge_token);
+        const enr = await apiFetch<{
+          enroll_token: string;
+          secret: string;
+          qr_svg_data_uri: string;
+        }>("/api/v1/auth/2fa/enroll", {
           method: "POST",
           skipAuth: true,
           retryOn401: false,
-          body: JSON.stringify({ email: email.trim(), password }),
-        },
-      );
-      await setSession(res.access_token, res.user);
-      const me = await apiFetch<{ venues: Array<{ id: string }> }>("/api/v1/auth/me");
-      router.push(defaultHomeForRole(res.user.role, me.venues[0]?.id));
+          body: JSON.stringify({ challenge_token: res.challenge_token }),
+        });
+        setEnrollData(enr);
+        setSetupVerifyCode("");
+        return;
+      }
+
+      if (res.access_token && res.user) {
+        await setSession(res.access_token, res.user);
+        const me = await apiFetch<{ venues: Array<{ id: string }> }>("/api/v1/auth/me");
+        router.push(defaultHomeForRole(res.user.role, me.venues[0]?.id));
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
@@ -87,6 +132,87 @@ function LoginFormInner() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleTwoFaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFaChallenge || !twoFaCode.trim()) {
+      setErrorMsg("Enter your 6-digit authenticator code or recovery code.");
+      return;
+    }
+    setErrorMsg(null);
+    setSubmitting(true);
+    try {
+      const res = await apiFetch<{ access_token: string; user: AuthUser }>(
+        "/api/v1/auth/2fa/verify",
+        {
+          method: "POST",
+          skipAuth: true,
+          retryOn401: false,
+          body: JSON.stringify({
+            challenge_token: twoFaChallenge,
+            code: twoFaCode.trim(),
+          }),
+        },
+      );
+      await setSession(res.access_token, res.user);
+      const me = await apiFetch<{ venues: Array<{ id: string }> }>("/api/v1/auth/me");
+      router.push(defaultHomeForRole(res.user.role, me.venues[0]?.id));
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 429) {
+          setRetryCountdown(60);
+          setErrorMsg("Too many verification attempts. Please wait or restart sign-in.");
+        } else {
+          setErrorMsg(err.message || "Invalid verification or recovery code");
+        }
+      } else {
+        setErrorMsg("Unable to reach server. Please try again.");
+      }
+      setTimeout(() => errorBannerRef.current?.focus(), 0);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEnforcedEnrollVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!setupChallenge || !enrollData || !setupVerifyCode.trim()) {
+      setErrorMsg("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setErrorMsg(null);
+    setSubmitting(true);
+    try {
+      const res = await apiFetch<{
+        access_token: string;
+        user: AuthUser;
+        recovery_codes: string[];
+      }>("/api/v1/auth/2fa/verify-enroll", {
+        method: "POST",
+        skipAuth: true,
+        retryOn401: false,
+        body: JSON.stringify({
+          challenge_token: setupChallenge,
+          enroll_token: enrollData.enroll_token,
+          code: setupVerifyCode.trim(),
+        }),
+      });
+      setIssuedRecoveryCodes(res.recovery_codes);
+      setPendingSession({ access_token: res.access_token, user: res.user });
+    } catch (err) {
+      setErrorMsg(err instanceof ApiError ? err.message : "Invalid 6-digit code");
+      setTimeout(() => errorBannerRef.current?.focus(), 0);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const finishEnforcedSetup = async () => {
+    if (!pendingSession) return;
+    await setSession(pendingSession.access_token, pendingSession.user);
+    const me = await apiFetch<{ venues: Array<{ id: string }> }>("/api/v1/auth/me");
+    router.push(defaultHomeForRole(pendingSession.user.role, me.venues[0]?.id));
   };
 
   const handleDemoLogin = async () => {
@@ -145,6 +271,129 @@ function LoginFormInner() {
           </div>
         )}
 
+        {issuedRecoveryCodes && pendingSession ? (
+          <div className="space-y-4">
+            <div
+              role="status"
+              className="rounded-2xl bg-[#34C759]/15 px-4 py-3 text-xs font-semibold text-[#1E6B34] dark:text-[#7CE89B]"
+            >
+              Two-factor authentication is now enabled. Save these 8 single-use recovery codes before continuing.
+            </div>
+            <ul className="grid grid-cols-2 gap-2 rounded-2xl bg-[var(--tp-inset-field)] p-3 font-mono text-xs border border-[var(--tp-card-border)]">
+              {issuedRecoveryCodes.map((c) => (
+                <li key={c} className="text-center py-1 rounded bg-[var(--tp-surface)]">
+                  {c}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => void finishEnforcedSetup()}
+              className="w-full min-h-[48px] rounded-full bg-[var(--tp-accent)] text-white text-sm font-semibold"
+            >
+              Continue to TablePulse
+            </button>
+          </div>
+        ) : setupChallenge && enrollData ? (
+          <form onSubmit={handleEnforcedEnrollVerify} noValidate className="space-y-4">
+            <div
+              role="status"
+              className="rounded-2xl bg-[#FF9500]/15 px-4 py-3 text-xs font-medium text-[#9A4E00] dark:text-[#FFB340]"
+            >
+              Your organization requires two-factor authentication for your role. Scan the QR code or copy the key below.
+            </div>
+            <div className="flex flex-col items-center gap-3 rounded-2xl bg-[var(--tp-inset-field)] p-4 border border-[var(--tp-card-border)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={enrollData.qr_svg_data_uri}
+                alt="Two-factor authenticator setup QR code"
+                className="h-44 w-44 rounded-xl bg-white p-2"
+              />
+              <div className="w-full text-center">
+                <span className="block text-[11px] font-semibold text-[var(--tp-label-secondary)]">
+                  Manual setup key
+                </span>
+                <code className="mt-1 block break-all rounded-lg bg-[var(--tp-surface)] px-2.5 py-1.5 font-mono text-xs select-all">
+                  {enrollData.secret}
+                </code>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="setup-totp-code" className="block text-xs font-semibold mb-1.5">
+                6-digit verification code
+              </label>
+              <input
+                id="setup-totp-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={setupVerifyCode}
+                onChange={(e) => setSetupVerifyCode(e.target.value)}
+                placeholder="123456"
+                className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm font-mono tracking-widest border border-[var(--tp-card-border)]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full min-h-[48px] rounded-full bg-[var(--tp-accent)] text-white text-sm font-semibold disabled:opacity-60"
+            >
+              {submitting ? "Activating 2FA..." : "Verify & Activate 2FA"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSetupChallenge(null);
+                setEnrollData(null);
+                setErrorMsg(null);
+              }}
+              className="w-full min-h-[44px] rounded-full border border-[var(--tp-card-border)] text-xs font-semibold"
+            >
+              Back to password sign-in
+            </button>
+          </form>
+        ) : twoFaChallenge ? (
+          <form onSubmit={handleTwoFaVerify} noValidate className="space-y-4">
+            <div
+              role="status"
+              className="rounded-2xl bg-[var(--tp-inset-field)] px-4 py-3 text-xs font-medium text-[var(--tp-label-secondary)] border border-[var(--tp-card-border)]"
+            >
+              Enter the 6-digit code from your authenticator app or an 8-character single-use recovery code.
+            </div>
+            <div>
+              <label htmlFor="login-2fa-code" className="block text-xs font-semibold mb-1.5">
+                Authenticator or recovery code
+              </label>
+              <input
+                id="login-2fa-code"
+                type="text"
+                autoComplete="one-time-code"
+                value={twoFaCode}
+                onChange={(e) => setTwoFaCode(e.target.value)}
+                placeholder="123456 or ABCD-EFGH"
+                className="w-full min-h-[46px] rounded-[14px] bg-[var(--tp-inset-field)] px-3.5 text-sm font-mono tracking-wider border border-[var(--tp-card-border)]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting || retryCountdown > 0}
+              className="w-full min-h-[48px] rounded-full bg-[var(--tp-accent)] text-white text-sm font-semibold disabled:opacity-60"
+            >
+              {submitting ? "Verifying..." : "Verify & Sign In"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFaChallenge(null);
+                setTwoFaCode("");
+                setErrorMsg(null);
+              }}
+              className="w-full min-h-[44px] rounded-full border border-[var(--tp-card-border)] text-xs font-semibold"
+            >
+              Back to password sign-in
+            </button>
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <label htmlFor="login-email" className="block text-xs font-semibold mb-1.5">
@@ -221,8 +470,9 @@ function LoginFormInner() {
             {submitting ? "Signing in..." : "Sign In"}
           </button>
         </form>
+        )}
 
-        {demoMode && (
+        {demoMode && !twoFaChallenge && !setupChallenge && (
           <div className="mt-5 rounded-[18px] bg-[var(--tp-inset-field)] p-4 border border-[var(--tp-card-border)]">
             <div className="text-xs font-semibold text-[var(--tp-label-secondary)] mb-2">
               Demo Mode Enabled (DEMO_MODE=true)

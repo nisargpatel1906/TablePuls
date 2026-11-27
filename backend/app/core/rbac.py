@@ -21,7 +21,7 @@ from app.core.errors import AppError
 from app.core.security import decode_access_token
 from app.core.valkey_client import is_user_revoked
 from app.db.base import get_db
-from app.db.models import User, Venue
+from app.db.models import SystemSetting, User, Venue
 
 
 class Role(StrEnum):
@@ -158,6 +158,34 @@ def require_venue_role(
             raise AppError(403, "AUTH_FORBIDDEN", "User not assigned to this venue")
 
         if user_role in resolved_roles:
+            if user_role == Role.MANAGER and capability in (
+                "tables.manage",
+                "menu.manage",
+                "menu.media.upload",
+            ):
+                sys_set = (
+                    await db.execute(
+                        select(SystemSetting).where(
+                            SystemSetting.organization_id == user.organization_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if sys_set is not None:
+                    if capability == "tables.manage" and not sys_set.managers_can_manage_tables:
+                        raise AppError(
+                            403,
+                            "POLICY_DISABLED",
+                            "Organization policy restricts table management to OWNER",
+                        )
+                    if (
+                        capability in ("menu.manage", "menu.media.upload")
+                        and not sys_set.managers_can_manage_menu
+                    ):
+                        raise AppError(
+                            403,
+                            "POLICY_DISABLED",
+                            "Organization policy restricts menu management to OWNER",
+                        )
             return user
 
         if (

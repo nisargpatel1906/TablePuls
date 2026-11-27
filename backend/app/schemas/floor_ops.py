@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.auth import RoleLiteral
+
 
 class StrictSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -85,3 +87,8 @@ class UpdateSystemSettingsRequest(StrictSchema):
     face_blur_enforced: bool | None = None
     snapshot_retention_days: int | None = Field(default=None, ge=0, le=30)
     analytics_retention_days: int | None = Field(default=None, ge=30, le=1095)
+    require_2fa_roles: list[RoleLiteral] | None = None
+    managers_can_manage_tables: bool | None = None
+    managers_can_manage_menu: bool | None = None
+    admins_can_manage_tables: bool | None = None
+    admins_can_manage_menu: bool | None = None

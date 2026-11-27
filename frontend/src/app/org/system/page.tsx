@@ -7,6 +7,8 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { hasCapability } from "@/lib/rbac";
 import { useAuth } from "@/providers/AuthProvider";
 
+import type { Role } from "@/lib/rbac";
+
 interface SystemOverviewDTO {
   health: {
     api: string;
@@ -19,6 +21,11 @@ interface SystemOverviewDTO {
     face_blur_enforced: boolean;
     snapshot_retention_days: number;
     analytics_retention_days: number;
+    require_2fa_roles?: Role[];
+    managers_can_manage_tables?: boolean;
+    managers_can_manage_menu?: boolean;
+    admins_can_manage_tables?: boolean;
+    admins_can_manage_menu?: boolean;
   };
   models: Array<{
     id: string;
@@ -35,12 +42,17 @@ interface SystemOverviewDTO {
 }
 
 export default function SystemHealthPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshSessionData } = useAuth();
   const canManageSystem = hasCapability(user?.role, "system.manage");
 
   const [data, setData] = useState<SystemOverviewDTO | null>(null);
   const [snapDays, setSnapDays] = useState(7);
   const [analyticsDays, setAnalyticsDays] = useState(365);
+  const [req2faRoles, setReq2faRoles] = useState<Role[]>([]);
+  const [mgrTables, setMgrTables] = useState(true);
+  const [mgrMenu, setMgrMenu] = useState(true);
+  const [admTables, setAdmTables] = useState(true);
+  const [admMenu, setAdmMenu] = useState(true);
   const [confirmPurge, setConfirmPurge] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -60,6 +72,11 @@ export default function SystemHealthPage() {
       setData(res);
       setSnapDays(res.settings.snapshot_retention_days);
       setAnalyticsDays(res.settings.analytics_retention_days);
+      setReq2faRoles(res.settings.require_2fa_roles || []);
+      setMgrTables(res.settings.managers_can_manage_tables ?? true);
+      setMgrMenu(res.settings.managers_can_manage_menu ?? true);
+      setAdmTables(res.settings.admins_can_manage_tables ?? true);
+      setAdmMenu(res.settings.admins_can_manage_menu ?? true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load system overview");
     } finally {
@@ -92,6 +109,32 @@ export default function SystemHealthPage() {
       await loadSystem();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to toggle AI kill switch");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveOrgPolicies(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await apiFetch("/api/v1/org/system", {
+        method: "PATCH",
+        body: JSON.stringify({
+          require_2fa_roles: req2faRoles,
+          managers_can_manage_tables: mgrTables,
+          managers_can_manage_menu: mgrMenu,
+          admins_can_manage_tables: admTables,
+          admins_can_manage_menu: admMenu,
+        }),
+      });
+      setSuccessMsg("Updated organization security & delegation policies.");
+      await loadSystem();
+      await refreshSessionData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save organization policies");
     } finally {
       setBusy(false);
     }
@@ -383,6 +426,96 @@ export default function SystemHealthPage() {
                   </div>
                 )}
               </div>
+            </section>
+
+            {/* Card 5: Organization Security & Role Policies */}
+            <section className="tp-glass flex flex-col gap-3 rounded-xl border p-4 lg:col-span-2">
+              <div>
+                <h2 className="text-base font-bold">Organization Security & Role Delegation Policies</h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                  Enforce two-factor authentication by role and control delegated table/menu administration.
+                </p>
+              </div>
+              <form onSubmit={saveOrgPolicies} className="space-y-4 text-xs font-medium">
+                <div>
+                  <span className="block font-semibold mb-2">Require 2FA for Roles</span>
+                  <div className="flex flex-wrap gap-3">
+                    {(["OWNER", "MANAGER", "HOST", "STAFF", "VIEWER"] as Role[]).map((roleName) => {
+                      const checked = req2faRoles.includes(roleName);
+                      return (
+                        <label
+                          key={roleName}
+                          className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(ev) =>
+                              setReq2faRoles((prev) =>
+                                ev.target.checked
+                                  ? [...prev, roleName]
+                                  : prev.filter((r) => r !== roleName),
+                              )
+                            }
+                            className="h-4 w-4"
+                          />
+                          <span className="font-semibold">{roleName}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[
+                    {
+                      id: "pol-mgr-tables",
+                      label: "Managers can manage tables (create/edit/delete)",
+                      checked: mgrTables,
+                      onChange: setMgrTables,
+                    },
+                    {
+                      id: "pol-mgr-menu",
+                      label: "Managers can manage menu catalog",
+                      checked: mgrMenu,
+                      onChange: setMgrMenu,
+                    },
+                    {
+                      id: "pol-adm-tables",
+                      label: "Delegated admins can manage tables",
+                      checked: admTables,
+                      onChange: setAdmTables,
+                    },
+                    {
+                      id: "pol-adm-menu",
+                      label: "Delegated admins can manage menu catalog",
+                      checked: admMenu,
+                      onChange: setAdmMenu,
+                    },
+                  ].map((item) => (
+                    <label
+                      key={item.id}
+                      htmlFor={item.id}
+                      className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 cursor-pointer"
+                    >
+                      <input
+                        id={item.id}
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={(ev) => item.onChange(ev.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  Save Organization Policies
+                </button>
+              </form>
             </section>
           </div>
         )}

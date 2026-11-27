@@ -461,6 +461,11 @@ async def get_system_overview(
                 "face_blur_enforced": sys_set.face_blur_enforced,
                 "snapshot_retention_days": sys_set.snapshot_retention_days,
                 "analytics_retention_days": sys_set.analytics_retention_days,
+                "require_2fa_roles": list(sys_set.require_2fa_roles or []),
+                "managers_can_manage_tables": sys_set.managers_can_manage_tables,
+                "managers_can_manage_menu": sys_set.managers_can_manage_menu,
+                "admins_can_manage_tables": sys_set.admins_can_manage_tables,
+                "admins_can_manage_menu": sys_set.admins_can_manage_menu,
             },
             "models": [
                 {
@@ -507,6 +512,11 @@ async def update_system_settings(
         "face_blur_enforced": sys_set.face_blur_enforced,
         "snapshot_retention_days": sys_set.snapshot_retention_days,
         "analytics_retention_days": sys_set.analytics_retention_days,
+        "require_2fa_roles": list(sys_set.require_2fa_roles or []),
+        "managers_can_manage_tables": sys_set.managers_can_manage_tables,
+        "managers_can_manage_menu": sys_set.managers_can_manage_menu,
+        "admins_can_manage_tables": sys_set.admins_can_manage_tables,
+        "admins_can_manage_menu": sys_set.admins_can_manage_menu,
     }
     if body.ai_inference_enabled is not None:
         sys_set.ai_inference_enabled = body.ai_inference_enabled
@@ -516,6 +526,17 @@ async def update_system_settings(
         sys_set.snapshot_retention_days = body.snapshot_retention_days
     if body.analytics_retention_days is not None:
         sys_set.analytics_retention_days = body.analytics_retention_days
+    if body.require_2fa_roles is not None:
+        # Preserve canonical unique role order
+        sys_set.require_2fa_roles = list(dict.fromkeys(body.require_2fa_roles))
+    if body.managers_can_manage_tables is not None:
+        sys_set.managers_can_manage_tables = body.managers_can_manage_tables
+    if body.managers_can_manage_menu is not None:
+        sys_set.managers_can_manage_menu = body.managers_can_manage_menu
+    if body.admins_can_manage_tables is not None:
+        sys_set.admins_can_manage_tables = body.admins_can_manage_tables
+    if body.admins_can_manage_menu is not None:
+        sys_set.admins_can_manage_menu = body.admins_can_manage_menu
     sys_set.updated_by = actor.id
     sys_set.updated_at = datetime.now(UTC)
 
@@ -524,6 +545,11 @@ async def update_system_settings(
         "face_blur_enforced": sys_set.face_blur_enforced,
         "snapshot_retention_days": sys_set.snapshot_retention_days,
         "analytics_retention_days": sys_set.analytics_retention_days,
+        "require_2fa_roles": list(sys_set.require_2fa_roles or []),
+        "managers_can_manage_tables": sys_set.managers_can_manage_tables,
+        "managers_can_manage_menu": sys_set.managers_can_manage_menu,
+        "admins_can_manage_tables": sys_set.admins_can_manage_tables,
+        "admins_can_manage_menu": sys_set.admins_can_manage_menu,
     }
     await write_audit_log(
         db,

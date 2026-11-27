@@ -130,6 +130,9 @@ class User(Base):
     totp_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    totp_recovery_codes_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -140,7 +143,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     __table_args__ = (
         CheckConstraint(
-            "token_type IN ('REFRESH','INVITE','PASSWORD_RESET')",
+            "token_type IN ('REFRESH','INVITE','PASSWORD_RESET','2FA_CHALLENGE')",
             name="ck_refresh_tokens_type",
         ),
     )
@@ -618,6 +621,21 @@ class SystemSetting(Base):
     analytics_retention_days: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("365")
     )
+    require_2fa_roles: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    managers_can_manage_tables: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    managers_can_manage_menu: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    admins_can_manage_tables: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    admins_can_manage_menu: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -718,6 +736,9 @@ class Menu(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    translations_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="PUBLISHED")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
@@ -771,6 +792,9 @@ class MenuCategory(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    translations_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
@@ -851,6 +875,13 @@ class MenuItem(Base):
             "is_available",
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        Index(
+            "uq_menu_items_venue_sku_active",
+            "venue_id",
+            text("lower(sku)"),
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL AND sku IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -869,8 +900,12 @@ class MenuItem(Base):
         ForeignKey("menu_categories.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    sku: Mapped[str | None] = mapped_column(String(64), nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    translations_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     price_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
     compare_at_price_minor_units: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     image_asset_id: Mapped[uuid.UUID | None] = mapped_column(
