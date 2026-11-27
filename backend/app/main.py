@@ -29,12 +29,12 @@ from app.api.tables_admin import router as tables_admin_router
 from app.api.venues_cameras import router as venues_cameras_router
 from app.api.waitlist_analytics import router as waitlist_analytics_router
 from app.config import get_settings
-from app.services.media import purge_orphan_menu_media_once
 from app.core.errors import error_envelope, register_exception_handlers, success_response
 from app.core.logging import configure_logging
 from app.core.rbac import load_rbac_matrix
 from app.core.valkey_client import close_valkey, ping_valkey
 from app.db.base import get_engine, get_session_factory
+from app.services.media import purge_orphan_menu_media_once
 from app.services.realtime import cv_stream_consumer_loop
 
 HTTP_REQUESTS = Counter(

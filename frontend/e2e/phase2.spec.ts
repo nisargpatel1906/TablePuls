@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 
 const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const E2E_OWNER_EMAIL = process.env.E2E_OWNER_EMAIL || "e2e-owner@example.com";
@@ -76,7 +77,6 @@ async function captureResponsiveShots(
 
 function makeTinyPngBuffer(): Buffer {
   // Valid 220x220 PNG created cleanly using pure Node zlib (zero external deps)
-  const zlib = require("node:zlib") as typeof import("node:zlib");
   const w = 220;
   const h = 220;
   const raw = Buffer.alloc((w * 3 + 1) * h);

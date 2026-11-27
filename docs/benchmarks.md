@@ -9,3 +9,5 @@
 |---|---|---|---|---|---|
 | 720p Frame Face-Blur + JPEG Encode + State Step | 60 | 313.17 | 233.12 | 501.12 | CPU OpenCV Haar cascade + upper-head blur + deterministic state tracker |
 | ML Release Gate (`G1–G11` + 500-resample cluster bootstrap) | 10 | 0.71 | 0.61 | 1.07 | Over synthetic fixture `tablepulse-fixture-v1` |
+| Public Menu API (`API-035` Valkey warm hit, `2026-11-27`) | 30 | — | 29.22 | 49.31 | Cold DB view read: `213.93 ms`; target `p95 <= 100 ms` |
+| Public Menu API (`API-035` ETag `304`, `2026-11-27`) | 20 | — | 18.92 | 24.33 | `If-None-Match` revalidation with `Cache-Control: no-cache` |
