@@ -22,6 +22,7 @@ import { AppShell } from "@/components/AppShell";
 import { apiFetch, ApiError } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { hasCapability } from "@/lib/rbac";
+import { previewBulkCodes } from "@/lib/table-codes";
 import { useAuth } from "@/providers/AuthProvider";
 import type { AdminTableItem } from "@/types/floor";
 
@@ -64,23 +65,6 @@ const DEFAULT_FORM: TableFormState = {
   is_active: true,
   table_notes: "",
 };
-
-export function previewBulkCodes(
-  prefix: string,
-  startNumber: number,
-  count: number,
-  zeroPad: number,
-): string[] {
-  const cleanPrefix = prefix.trim().toUpperCase();
-  if (!cleanPrefix || count < 1) return [];
-  const res: string[] = [];
-  const cap = Math.min(count, 50);
-  for (let i = 0; i < cap; i += 1) {
-    const numStr = String(startNumber + i).padStart(Math.max(1, zeroPad), "0");
-    res.push(`${cleanPrefix}${numStr}`);
-  }
-  return res;
-}
 
 export default function TablesAdminPage() {
   const params = useParams<{ venueId: string }>();
@@ -513,7 +497,7 @@ export default function TablesAdminPage() {
                     type="button"
                     disabled={submitting}
                     onClick={() => void handleBulkUpdate({ is_active: false })}
-                    className="rounded bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white"
+                    className="rounded bg-amber-800 px-2.5 py-1 text-xs font-semibold text-white"
                   >
                     Deactivate
                   </button>

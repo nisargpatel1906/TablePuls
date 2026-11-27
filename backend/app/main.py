@@ -29,6 +29,7 @@ from app.api.tables_admin import router as tables_admin_router
 from app.api.venues_cameras import router as venues_cameras_router
 from app.api.waitlist_analytics import router as waitlist_analytics_router
 from app.config import get_settings
+from app.services.media import purge_orphan_menu_media_once
 from app.core.errors import error_envelope, register_exception_handlers, success_response
 from app.core.logging import configure_logging
 from app.core.rbac import load_rbac_matrix
@@ -58,6 +59,7 @@ async def _retention_cleanup_loop(stop_event: asyncio.Event) -> None:
                 await expire_grace_qr_codes_once(db)
                 if cycles % 12 == 0:
                     await purge_expired_snapshots_once(db)
+                    await purge_orphan_menu_media_once(db)
         except Exception:
             pass
         cycles += 1

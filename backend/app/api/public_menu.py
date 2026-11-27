@@ -445,7 +445,7 @@ async def get_public_menu_by_qr(
             status_code=304,
             headers={
                 "ETag": etag,
-                "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+                "Cache-Control": "no-cache",
                 "X-Robots-Tag": "noindex, nofollow",
             },
         )
@@ -464,7 +464,7 @@ async def get_public_menu_by_qr(
 
     headers = {
         "ETag": etag,
-        "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+        "Cache-Control": "no-cache",
         "X-Robots-Tag": "noindex, nofollow",
     }
     if stale_served:

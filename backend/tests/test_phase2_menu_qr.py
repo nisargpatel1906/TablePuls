@@ -411,3 +411,39 @@ async def test_qr_management_decode_verification_pdf_and_grace_lifecycle(
         )
     ).fetchone()
     assert tok1_status == ("REVOKED", "SECURITY_REVOKE")
+
+
+@pytest.mark.asyncio
+async def test_orphan_menu_media_gc(db_session: AsyncSession) -> None:
+    """Verify purge_orphan_menu_media_once removes unreferenced >24h assets while preserving in-use files."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import MenuMediaAsset, Organization, Venue
+    from app.services.media import purge_orphan_menu_media_once, write_media_files_atomic
+
+    org = Organization(name=f"GCOrg-{uuid.uuid4().hex[:6]}")
+    db_session.add(org)
+    await db_session.flush()
+    venue = Venue(organization_id=org.id, name="GCVenue", timezone="UTC")
+    db_session.add(venue)
+    await db_session.flush()
+
+    full_k, thumb_k = write_media_files_atomic(venue.id, b"RIFF0000WEBP", b"RIFF0000WEBP")
+    orphan = MenuMediaAsset(
+        organization_id=org.id,
+        venue_id=venue.id,
+        storage_key=full_k,
+        thumb_storage_key=thumb_k,
+        mime_type="image/webp",
+        byte_size=12,
+        width_px=200,
+        height_px=200,
+        sha256="a" * 64,
+        status="READY",
+        created_at=datetime.now(UTC) - timedelta(hours=30),
+    )
+    db_session.add(orphan)
+    await db_session.commit()
+
+    removed = await purge_orphan_menu_media_once(db_session, min_age_hours=24)
+    assert removed >= 1

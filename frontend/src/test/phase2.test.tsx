@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewBulkCodes } from "@/app/venues/[venueId]/settings/tables/page";
+import { previewBulkCodes } from "@/lib/table-codes";
 import {
   formatMinorUnits,
   minorUnitsToInputString,

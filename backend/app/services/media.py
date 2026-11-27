@@ -7,12 +7,16 @@ import io
 import os
 import tempfile
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from PIL import Image, ImageOps
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.errors import AppError
+from app.db.models import MenuItem, MenuMediaAsset, Venue
 
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
@@ -136,3 +140,48 @@ def delete_media_files(storage_key: str, thumb_storage_key: str) -> None:
         cand = (root / key).resolve()
         if cand.is_relative_to(root):
             cand.unlink(missing_ok=True)
+
+
+async def purge_orphan_menu_media_once(db: AsyncSession, *, min_age_hours: int = 24) -> int:
+    """Garbage-collect unreferenced MenuMediaAsset rows & disk WebPs older than min_age_hours."""
+    cutoff = datetime.now(UTC) - timedelta(hours=min_age_hours)
+    used_item_assets = set(
+        (
+            await db.execute(
+                select(MenuItem.image_asset_id).where(MenuItem.image_asset_id.is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    used_logo_keys = set(
+        (
+            await db.execute(
+                select(Venue.logo_storage_key).where(
+                    Venue.logo_storage_key.is_not(None),
+                    Venue.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    candidates = (
+        (
+            await db.execute(
+                select(MenuMediaAsset).where(MenuMediaAsset.created_at < cutoff)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    purged_ids: list[uuid.UUID] = []
+    for asset in candidates:
+        if asset.id in used_item_assets or asset.storage_key in used_logo_keys:
+            continue
+        delete_media_files(asset.storage_key, asset.thumb_storage_key)
+        purged_ids.append(asset.id)
+    if purged_ids:
+        await db.execute(delete(MenuMediaAsset).where(MenuMediaAsset.id.in_(purged_ids)))
+        await db.commit()
+    return len(purged_ids)

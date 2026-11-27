@@ -22,7 +22,7 @@ RUN uv sync --no-dev --frozen || uv sync --no-dev
 COPY backend /app/backend
 
 RUN useradd --create-home --shell /bin/bash appuser && \
-    mkdir -p /app/data/snapshots /app/data/models && \
+    mkdir -p /app/data/snapshots /app/data/models /app/data/menu-media && \
     chown -R appuser:appuser /app
 
 USER appuser

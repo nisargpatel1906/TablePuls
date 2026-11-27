@@ -64,7 +64,8 @@
   --tp-wash-green: rgba(52, 199, 89, 0.09);
 }
 
-html.dark {
+html.dark,
+[data-theme="dark"] {
   --tp-canvas: #000000;
   --tp-surface: #1c1c1e;
   --tp-inset-field: #2c2c2e;
@@ -74,6 +75,13 @@ html.dark {
   --tp-card-border: rgba(255, 255, 255, 0.09);
   --tp-accent: #0062cc;
   --tp-accent-text: #64b5ff;
+
+  --bg-canvas: var(--tp-canvas);
+  --surface-solid: var(--tp-surface);
+  --text-primary: var(--tp-label-primary);
+  --text-secondary: var(--tp-label-secondary);
+  --border-subtle: var(--tp-card-border);
+  --accent-primary: var(--tp-accent);
 
   --tp-glass-bg: rgba(28, 28, 30, 0.74);
   --tp-glass-pill: rgba(36, 36, 38, 0.78);

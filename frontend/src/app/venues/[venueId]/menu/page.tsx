@@ -729,8 +729,8 @@ export default function MenuStudioPage() {
                     <span
                       className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
                         m.status === "PUBLISHED"
-                          ? "bg-emerald-500/20 text-emerald-200"
-                          : "bg-black/20"
+                          ? "bg-emerald-800 text-white"
+                          : "bg-slate-800 text-white"
                       }`}
                     >
                       {m.status}
@@ -901,7 +901,7 @@ export default function MenuStudioPage() {
                           <button
                             type="button"
                             onClick={() => void bulkSetAvailability(false)}
-                            className="rounded-lg bg-amber-600 px-2.5 py-1.5 text-xs font-semibold text-white"
+                            className="rounded-lg bg-amber-800 px-2.5 py-1.5 text-xs font-semibold text-white"
                           >
                             Mark 86 / Sold Out ({selectedItemIds.length})
                           </button>
@@ -938,7 +938,7 @@ export default function MenuStudioPage() {
                         <article
                           key={item.id}
                           className={`tp-glass flex gap-3 rounded-xl border p-3 transition ${
-                            !item.is_available ? "opacity-70" : ""
+                            !item.is_available ? "border-amber-700/60" : ""
                           }`}
                         >
                           {canQuick86 && (
@@ -1004,8 +1004,8 @@ export default function MenuStudioPage() {
                                   onClick={() => void toggleQuick86(item)}
                                   className={`min-h-[34px] rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
                                     item.is_available
-                                      ? "bg-emerald-600 text-white"
-                                      : "bg-amber-600 text-white"
+                                      ? "bg-emerald-800 text-white"
+                                      : "bg-amber-800 text-white"
                                   }`}
                                 >
                                   {item.is_available ? "In Stock" : "Sold Out (86)"}

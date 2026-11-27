@@ -437,7 +437,7 @@ export function PublicDigitalMenu({
                           type="button"
                           onClick={() => setActiveItem(item)}
                           className={`tp-glass flex min-h-[96px] w-full gap-3 rounded-2xl border p-3 text-left transition hover:border-[var(--accent-primary)] ${
-                            !item.is_available ? "opacity-65" : ""
+                            !item.is_available ? "border-amber-700/50" : ""
                           }`}
                         >
                           <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
@@ -445,13 +445,13 @@ export function PublicDigitalMenu({
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="text-sm font-bold">{item.name}</span>
                                 {item.is_featured && (
-                                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                                     <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
                                     {lbl.featured}
                                   </span>
                                 )}
                                 {!item.is_available && (
-                                  <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+                                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900 dark:bg-red-900 dark:text-red-100">
                                     {lbl.soldOut}
                                   </span>
                                 )}
@@ -464,7 +464,7 @@ export function PublicDigitalMenu({
                             </div>
 
                             <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-sm font-bold">
+                              <span className="font-mono text-sm font-bold text-[var(--text-primary)]">
                                 {formatMinorUnits(
                                   item.price_minor_units,
                                   data.venue.currency_code,
@@ -483,7 +483,7 @@ export function PublicDigitalMenu({
                               {item.dietary_tags.slice(0, 3).map((tag) => (
                                 <span
                                   key={tag}
-                                  className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                  className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100"
                                 >
                                   {tag}
                                 </span>
@@ -548,7 +548,7 @@ export function PublicDigitalMenu({
                     </span>
                   )}
                   {!activeItem.is_available && (
-                    <span className="rounded bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-700 dark:text-red-300">
+                    <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-bold text-red-900 dark:bg-red-900 dark:text-red-100">
                       {lbl.soldOut}
                     </span>
                   )}
@@ -626,7 +626,7 @@ export function PublicDigitalMenu({
                   {activeItem.allergens.map((alg) => (
                     <span
                       key={alg}
-                      className="rounded-full bg-amber-600 px-2.5 py-0.5 text-[11px] font-bold text-white"
+                      className="rounded-full bg-amber-800 px-2.5 py-0.5 text-[11px] font-bold text-white"
                     >
                       {alg}
                     </span>
