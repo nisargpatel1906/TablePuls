@@ -46,6 +46,7 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
   const retryCountRef = useRef(0);
   const pollTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const terminalAccessErrorRef = useRef(false);
 
   const pushToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -55,16 +56,22 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
     toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 5000);
   }, []);
 
-  const fetchSnapshot = useCallback(async () => {
-    if (!venueId) return;
+  const fetchSnapshot = useCallback(async (): Promise<boolean> => {
+    if (!venueId) return false;
     try {
       const data = await apiFetch<FloorSnapshot>(`/api/v1/venues/${venueId}/floor-state`);
+      terminalAccessErrorRef.current = false;
       setSnapshot(data);
       setError(null);
+      return true;
     } catch (err) {
+      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+        terminalAccessErrorRef.current = true;
+      }
       const msg =
         err instanceof ApiError ? err.message : "Failed to load floor state from API";
       setError(msg);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -76,16 +83,17 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
       return;
     }
 
+    terminalAccessErrorRef.current = false;
     let cancelled = false;
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;
     let reconnectTimer: number | null = null;
 
     const startPolling = () => {
-      if (pollTimerRef.current) return;
+      if (pollTimerRef.current || terminalAccessErrorRef.current) return;
       setConnectionState("polling");
       pollTimerRef.current = window.setInterval(() => {
-        if (!cancelled) {
+        if (!cancelled && !terminalAccessErrorRef.current) {
           void fetchSnapshot();
         }
       }, 5000);
@@ -99,12 +107,12 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
     };
 
     const connectWs = async () => {
-      if (cancelled) return;
+      if (cancelled || terminalAccessErrorRef.current) return;
       try {
         const ticketRes = await apiFetch<{ ticket: string }>("/api/v1/auth/ws-ticket", {
           method: "POST",
         });
-        if (cancelled) return;
+        if (cancelled || terminalAccessErrorRef.current) return;
 
         const baseWs =
           process.env.NEXT_PUBLIC_WS_BASE_URL || toWsUrl(apiBaseUrl());
@@ -189,7 +197,7 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
             window.clearInterval(pingTimer);
             pingTimer = null;
           }
-          if (cancelled) return;
+          if (cancelled || terminalAccessErrorRef.current) return;
 
           retryCountRef.current += 1;
           if (retryCountRef.current >= 3) {
@@ -203,6 +211,7 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
           }, backoffMs);
         };
       } catch {
+        if (cancelled || terminalAccessErrorRef.current) return;
         retryCountRef.current += 1;
         if (retryCountRef.current >= 3) {
           startPolling();
@@ -215,8 +224,12 @@ export function useVenueRealtime(venueId: string | undefined, enabled = true) {
       }
     };
 
-    void fetchSnapshot();
-    void connectWs();
+    void (async () => {
+      const ok = await fetchSnapshot();
+      if (!cancelled && ok && !terminalAccessErrorRef.current) {
+        await connectWs();
+      }
+    })();
 
     return () => {
       cancelled = true;

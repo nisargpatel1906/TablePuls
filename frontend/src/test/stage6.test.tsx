@@ -169,4 +169,46 @@ describe("Stage 6 TablePulse UI Foundation", () => {
 
     vi.unstubAllGlobals();
   }, 9000);
+
+  it("does not open WebSockets or loop-retry when floor-state returns 403", async () => {
+    let wsCreated = 0;
+    class SpyWebSocket {
+      constructor() {
+        wsCreated += 1;
+      }
+      close() {}
+    }
+
+    vi.stubGlobal("WebSocket", SpyWebSocket);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: false,
+              error: { code: "FORBIDDEN", message: "Venue access denied" },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    function DeniedHarness() {
+      const { loading, error } = useVenueRealtime("foreign-venue", true);
+      return (
+        <div>
+          <span data-testid="loading">{String(loading)}</span>
+          <span data-testid="err">{error || ""}</span>
+        </div>
+      );
+    }
+
+    render(<DeniedHarness />);
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"));
+    expect(screen.getByTestId("err").textContent).toBe("Venue access denied");
+    expect(wsCreated).toBe(0);
+    vi.unstubAllGlobals();
+  });
 });

@@ -67,8 +67,9 @@ export function AppShell({
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const activeVenueId = venueId || venues[0]?.id || "";
-  const activeVenue = venues.find((v) => v.id === activeVenueId) || venues[0];
+  const activeVenue =
+    (venueId ? venues.find((v) => v.id === venueId) : undefined) || venues[0];
+  const activeVenueId = activeVenue?.id || "";
   const allowHostCam = Boolean(activeVenue?.allow_host_camera_view);
 
   const primaryNav = [

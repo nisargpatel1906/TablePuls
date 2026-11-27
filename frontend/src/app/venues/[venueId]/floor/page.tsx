@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { LayoutGrid, List, RefreshCw, Search } from "lucide-react";
+import { LayoutGrid, List, Lock, RefreshCw, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { TableDetailDrawer } from "@/components/TableDetailDrawer";
 import { TableStateBadge } from "@/components/TableStateBadge";
@@ -36,10 +36,13 @@ const FILTER_STATES: Array<"ALL" | TableState> = [
 export default function LiveFloorPage() {
   const params = useParams<{ venueId: string }>();
   const venueId = params?.venueId;
-  const { user, loading: authLoading, locale } = useAuth();
+  const { user, venues, loading: authLoading, locale } = useAuth();
+  const hasVenueAccess = Boolean(
+    user && venueId && venues.some((v) => v.id === venueId),
+  );
 
   const { snapshot, loading, error, connectionState, toastMessage, refresh } =
-    useVenueRealtime(venueId, Boolean(user));
+    useVenueRealtime(venueId, hasVenueAccess);
 
   const [viewMode, setViewMode] = useState<"canvas" | "list">("canvas");
   const [sectionFilter, setSectionFilter] = useState("ALL");
@@ -112,6 +115,28 @@ export default function LiveFloorPage() {
           Go to Login
         </Link>
       </main>
+    );
+  }
+
+  if (!authLoading && user && venueId && !hasVenueAccess) {
+    return (
+      <AppShell>
+        <div className="tp-glass mx-auto flex max-w-lg flex-col items-center gap-3 rounded-xl border p-8 text-center">
+          <Lock className="h-8 w-8 text-amber-600" aria-hidden="true" />
+          <h1 className="text-lg font-bold">Permission Denied</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
+            You do not have access to this venue or it does not exist in your organization.
+          </p>
+          {venues[0]?.id && (
+            <Link
+              href={`/venues/${venues[0].id}/floor`}
+              className="mt-2 inline-flex min-h-[40px] items-center rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
+            >
+              Return to {venues[0].name}
+            </Link>
+          )}
+        </div>
+      </AppShell>
     );
   }
 
