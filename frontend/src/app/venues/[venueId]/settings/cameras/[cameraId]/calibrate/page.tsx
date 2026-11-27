@@ -231,7 +231,14 @@ export default function PolygonCalibrationPage() {
     setError(null);
     setSuccessMsg(null);
     const normalizedTables = tables.map((tbl) => ({
-      ...tbl,
+      ...(tbl.id ? { id: tbl.id } : {}),
+      table_code: tbl.table_code,
+      section_name: tbl.section_name || "Main",
+      seat_capacity: tbl.seat_capacity,
+      polygon_json: tbl.polygon_json.map((pt) => ({
+        x: Math.max(0, Math.min(1, Math.round(pt.x * 1000) / 1000)),
+        y: Math.max(0, Math.min(1, Math.round(pt.y * 1000) / 1000)),
+      })),
       floor_x:
         tbl.floor_x > 1
           ? Math.max(0, Math.min(1, Math.round((tbl.floor_x / 800) * 1000) / 1000))
@@ -240,6 +247,8 @@ export default function PolygonCalibrationPage() {
         tbl.floor_y > 1
           ? Math.max(0, Math.min(1, Math.round((tbl.floor_y / 500) * 1000) / 1000))
           : Math.max(0, Math.min(1, Math.round(tbl.floor_y * 1000) / 1000)),
+      shape: tbl.shape || "RECT",
+      ...(tbl.version != null ? { version: tbl.version } : {}),
     }));
     for (const tbl of normalizedTables) {
       const err = validatePolygonPoints(tbl.polygon_json);
