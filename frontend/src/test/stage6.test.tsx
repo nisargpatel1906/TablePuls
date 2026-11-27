@@ -252,4 +252,59 @@ describe("Stage 6 TablePulse UI Foundation", () => {
     expect(css).toContain("min-height: 44px");
     expect(css).toContain("min-width: 44px");
   });
+
+  it("never renders malformed /venues/floor or /venues// links before venueId hydrates (TC-UI-01 regression)", async () => {
+    vi.resetModules();
+    vi.doMock("next/navigation", () => ({
+      usePathname: () => "/org/system",
+      useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/auth/bootstrap-status")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ success: true, data: { bootstrap_required: false, demo_mode: false, has_session: true } }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        if (url.includes("/auth/refresh") || url.includes("/auth/me")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                success: true,
+                data: {
+                  access_token: "tok",
+                  user: { id: "u1", organization_id: "o1", email: "o@ex.in", full_name: "Owner", role: "OWNER", assigned_venue_ids: [] },
+                  venues: [],
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.resolve(new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 }));
+      }),
+    );
+    const { AuthProvider: FreshAuth } = await import("@/providers/AuthProvider");
+    const { AppShell: FreshShell } = await import("@/components/AppShell");
+    const { container } = render(
+      <FreshAuth>
+        <FreshShell>
+          <div>Org Content</div>
+        </FreshShell>
+      </FreshAuth>,
+    );
+    await waitFor(() => expect(container.textContent).toContain("Org Content"));
+    const badLinks = Array.from(container.querySelectorAll("a")).filter((a) => {
+      const h = a.getAttribute("href") || "";
+      return h.startsWith("/venues//") || h === "/venues/floor" || h === "/venues/alerts" || h === "/venues/waitlist";
+    });
+    expect(badLinks).toHaveLength(0);
+    vi.doUnmock("next/navigation");
+    vi.unstubAllGlobals();
+  });
 });

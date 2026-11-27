@@ -54,7 +54,7 @@ export function AppShell({
   const {
     user,
     loading: authLoading,
-    venues,
+    venues = [],
     theme,
     solidMode,
     locale,
@@ -382,27 +382,50 @@ export function AppShell({
         aria-label="Bottom dock"
         className="lg:hidden fixed bottom-3 left-3 right-3 z-40 tp-glass rounded-full px-2 py-1.5 flex items-center justify-around"
       >
-        <Link
-          href={`/venues/${activeVenueId}/floor`}
-          className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
-        >
-          <Grid2x2 className="h-4 w-4" aria-hidden="true" />
-          <span>{t(locale, "nav.floor")}</span>
-        </Link>
-        <Link
-          href={`/venues/${activeVenueId}/alerts`}
-          className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
-        >
-          <Bell className="h-4 w-4" aria-hidden="true" />
-          <span>{t(locale, "nav.alerts")} ({activeAlertsCount})</span>
-        </Link>
-        <Link
-          href={`/venues/${activeVenueId}/waitlist`}
-          className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
-        >
-          <Clock className="h-4 w-4" aria-hidden="true" />
-          <span>{t(locale, "nav.waitlist")}</span>
-        </Link>
+        {[
+          {
+            href: `/venues/${activeVenueId}/floor`,
+            label: t(locale, "nav.floor"),
+            icon: Grid2x2,
+            allowed: hasCapability(user?.role, "floor.view"),
+          },
+          {
+            href: `/venues/${activeVenueId}/alerts`,
+            label: `${t(locale, "nav.alerts")} (${activeAlertsCount})`,
+            icon: Bell,
+            allowed: hasCapability(user?.role, "alerts.view"),
+          },
+          {
+            href: `/venues/${activeVenueId}/waitlist`,
+            label: t(locale, "nav.waitlist"),
+            icon: Clock,
+            allowed: hasCapability(user?.role, "waitlist.manage"),
+          },
+        ].map((item) => {
+          const Icon = item.icon;
+          if (!activeVenueId || !item.allowed) {
+            return (
+              <span
+                key={item.label}
+                aria-disabled="true"
+                className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium opacity-40"
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span>{item.label}</span>
+              </span>
+            );
+          }
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex flex-col items-center justify-center min-h-[44px] min-w-[60px] text-xs font-medium"
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
         <button
           type="button"
           onClick={() => setMobileMenuOpen(true)}
