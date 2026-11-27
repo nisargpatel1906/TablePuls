@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MenuItemDrawer } from "@/components/MenuItemDrawer";
+import { formatDietaryTag } from "@/lib/dietary";
 import type { MenuCategoryDTO } from "@/types/floor";
 import { nextAvailableTableCode, previewBulkCodes } from "@/lib/table-codes";
 import {
@@ -79,5 +80,12 @@ describe("Phase 2 Currency & Table Utilities", () => {
       />,
     );
     expect((screen.getByLabelText(/Dish Name/i) as HTMLInputElement).value).toBe("Bombay Bhel Puri");
+  });
+
+  it("formats dietary enum tags cleanly for English and Hindi UI badges", () => {
+    expect(formatDietaryTag("GLUTEN_FREE", "en")).toBe("Gluten-Free");
+    expect(formatDietaryTag("SPICY_MEDIUM", "en")).toBe("Medium");
+    expect(formatDietaryTag("CHEF_SPECIAL", "en")).toBe("Chef's Special");
+    expect(formatDietaryTag("GLUTEN_FREE", "hi")).toBe("ग्लूटेन-फ्री");
   });
 });

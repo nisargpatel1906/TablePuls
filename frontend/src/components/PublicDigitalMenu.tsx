@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { formatMinorUnits } from "@/lib/currency";
+import { formatDietaryTag } from "@/lib/dietary";
 import type { PublicMenuItemDTO, PublicMenuPayload } from "@/types/floor";
 
 interface PublicDigitalMenuProps {
@@ -485,7 +486,7 @@ export function PublicDigitalMenu({
                                   key={tag}
                                   className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100"
                                 >
-                                  {tag}
+                                  {formatDietaryTag(tag, locale)}
                                 </span>
                               ))}
                             </div>

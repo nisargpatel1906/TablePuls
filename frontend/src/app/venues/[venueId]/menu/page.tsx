@@ -42,6 +42,7 @@ import { MenuItemDrawer } from "@/components/MenuItemDrawer";
 import { MenuPreviewModal } from "@/components/MenuPreviewModal";
 import { apiFetch, ApiError, getAccessToken } from "@/lib/api";
 import { formatMinorUnits } from "@/lib/currency";
+import { formatDietaryTag } from "@/lib/dietary";
 import { t } from "@/lib/i18n";
 import { hasCapability } from "@/lib/rbac";
 import { useAuth } from "@/providers/AuthProvider";
@@ -990,7 +991,7 @@ export default function MenuStudioPage() {
                                       key={tag}
                                       className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
                                     >
-                                      {tag}
+                                      {formatDietaryTag(tag)}
                                     </span>
                                   ))}
                                 </div>

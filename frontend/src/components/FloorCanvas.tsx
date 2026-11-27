@@ -197,7 +197,9 @@ export default function FloorCanvas({
                   width={tbl.shape === "CIRCLE" ? 84 : textWidth}
                   align="center"
                   text={tbl.table_code}
-                  fontSize={16}
+                  fontSize={tbl.table_code.length > 9 ? 11.5 : tbl.table_code.length > 6 ? 13 : 16}
+                  wrap="none"
+                  ellipsis
                   fontStyle="bold"
                   fill={isDark ? "#F8FAFC" : "#0F172A"}
                 />
