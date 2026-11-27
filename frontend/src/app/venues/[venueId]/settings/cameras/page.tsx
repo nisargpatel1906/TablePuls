@@ -149,7 +149,7 @@ export default function CameraSettingsPage() {
               <button
                 type="button"
                 onClick={() => setShowModal((v) => !v)}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 Add Camera
@@ -366,13 +366,13 @@ export default function CameraSettingsPage() {
                     type="button"
                     disabled={testingId === cam.id}
                     onClick={() => void handleTestCamera(cam)}
-                    className="min-h-[38px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold hover:opacity-80 disabled:opacity-50"
+                    className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold hover:opacity-80 disabled:opacity-50"
                   >
                     {testingId === cam.id ? "Testing..." : "Test Connection"}
                   </button>
                   <Link
                     href={`/venues/${venueId}/settings/cameras/${cam.id}/calibrate`}
-                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                    className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
                   >
                     <PenTool className="h-3.5 w-3.5" aria-hidden="true" />
                     Calibrate Polygons
@@ -380,7 +380,7 @@ export default function CameraSettingsPage() {
                   <button
                     type="button"
                     onClick={() => void handleDeleteCamera(cam)}
-                    className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                    className="ml-auto inline-flex min-h-[44px] items-center rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
                   >
                     Remove
                   </button>

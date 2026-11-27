@@ -87,7 +87,7 @@ export default function AlertsQueuePage() {
             <button
               type="button"
               onClick={() => void loadAlerts()}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
               Refresh
@@ -210,7 +210,7 @@ export default function AlertsQueuePage() {
                           type="button"
                           disabled={busyId === al.id}
                           onClick={() => void updateStatus(al.id, "ACKNOWLEDGED")}
-                          className="min-h-[38px] rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+                          className="min-h-[44px] rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
                         >
                           Acknowledge
                         </button>
@@ -220,7 +220,7 @@ export default function AlertsQueuePage() {
                           type="button"
                           disabled={busyId === al.id}
                           onClick={() => void updateStatus(al.id, "RESOLVED")}
-                          className="min-h-[38px] rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                          className="min-h-[44px] rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
                         >
                           Resolve
                         </button>

@@ -14,7 +14,7 @@ async function assertNoHorizontalOverflow(page: import("@playwright/test").Page)
 
 async function assertNoCriticalA11y(page: import("@playwright/test").Page, routeLabel: string) {
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
     .analyze();
   const severe = results.violations.filter(
     (v) => v.impact === "critical" || v.impact === "serious",

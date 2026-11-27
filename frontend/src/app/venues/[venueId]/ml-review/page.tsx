@@ -195,7 +195,7 @@ export default function MLReviewPage() {
                 <button
                   type="button"
                   onClick={() => void handleExportZip()}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
                 >
                   <Download className="h-3.5 w-3.5" aria-hidden="true" />
                   Export Labeled Bundle (ZIP)

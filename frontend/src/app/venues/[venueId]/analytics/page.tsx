@@ -145,7 +145,7 @@ export default function PeakHoursAnalyticsPage() {
                 aria-label="Analytics time range"
                 value={rangePreset}
                 onChange={(e) => setRangePreset(e.target.value as "1d" | "7d" | "30d")}
-                className="min-h-[38px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium"
               >
                 <option value="1d">Today (24h)</option>
                 <option value="7d">Last 7 Days</option>
@@ -156,7 +156,7 @@ export default function PeakHoursAnalyticsPage() {
                 type="button"
                 aria-pressed={showDataTable}
                 onClick={() => setShowDataTable((v) => !v)}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
               >
                 <TableIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 {showDataTable ? "View Chart" : "View as Data Table"}
@@ -166,7 +166,7 @@ export default function PeakHoursAnalyticsPage() {
                 type="button"
                 disabled={exporting}
                 onClick={() => void handleExportCsv()}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
                 {exporting ? "Exporting..." : "Export CSV"}
@@ -175,7 +175,7 @@ export default function PeakHoursAnalyticsPage() {
               <button
                 type="button"
                 onClick={() => void loadAnalytics()}
-                className="inline-flex min-h-[38px] items-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-2"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-2"
                 aria-label="Refresh analytics"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />

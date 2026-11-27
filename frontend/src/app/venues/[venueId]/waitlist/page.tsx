@@ -164,7 +164,7 @@ export default function WaitlistPage() {
               <button
                 type="button"
                 onClick={() => void loadData(partyFilterSize)}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                 Refresh
@@ -172,7 +172,7 @@ export default function WaitlistPage() {
               <button
                 type="button"
                 onClick={() => setShowAdd((v) => !v)}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 Add Party
@@ -389,7 +389,7 @@ export default function WaitlistPage() {
                           type="button"
                           disabled={!canSeatNow || submitting}
                           onClick={() => void seatOnTable(pred.table_id)}
-                          className="min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="min-h-[44px] rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {pred.current_state === "FREE" ? "Seat Party Here" : "Not Free Yet"}
                         </button>

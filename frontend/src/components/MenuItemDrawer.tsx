@@ -54,8 +54,11 @@ export function MenuItemDrawer({
   onSaved,
 }: MenuItemDrawerProps) {
   const [categoryId, setCategoryId] = useState(defaultCategoryId);
+  const [sku, setSku] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [hiName, setHiName] = useState("");
+  const [hiDesc, setHiDesc] = useState("");
   const [priceText, setPriceText] = useState("0.00");
   const [compareText, setCompareText] = useState("");
   const [imageAssetId, setImageAssetId] = useState<string | null>(null);
@@ -92,8 +95,11 @@ export function MenuItemDrawer({
     prevInitKeyRef.current = initKey;
     if (item) {
       setCategoryId(item.category_id);
+      setSku(item.sku || "");
       setName(item.name);
       setDescription(item.description || "");
+      setHiName(item.translations_json?.hi?.name || "");
+      setHiDesc(item.translations_json?.hi?.description || "");
       setPriceText(minorUnitsToInputString(item.price_minor_units, currencyCode));
       setCompareText(
         item.compare_at_price_minor_units !== null
@@ -119,8 +125,11 @@ export function MenuItemDrawer({
       setCalories(item.calories_kcal !== null ? String(item.calories_kcal) : "");
     } else {
       setCategoryId(defaultCategoryId || categories[0]?.id || "");
+      setSku("");
       setName("");
       setDescription("");
+      setHiName("");
+      setHiDesc("");
       setPriceText(minorUnitsToInputString(0, currencyCode));
       setCompareText("");
       setImageAssetId(null);
@@ -230,14 +239,21 @@ export function MenuItemDrawer({
 
     setSaving(true);
     setError(null);
+    const hiEntry: Record<string, string> = {};
+    if (hiName.trim()) hiEntry.name = hiName.trim();
+    if (hiDesc.trim()) hiEntry.description = hiDesc.trim();
+    const translationsPayload = Object.keys(hiEntry).length > 0 ? { hi: hiEntry } : {};
     try {
       if (item) {
         await apiFetch(`/api/v1/venues/${venueId}/menu-items/${item.id}`, {
           method: "PATCH",
           body: JSON.stringify({
             category_id: categoryId,
+            sku: sku.trim() || null,
+            clear_sku: Boolean(item && !sku.trim()),
             name: name.trim(),
             description: description.trim() || null,
+            translations_json: translationsPayload,
             price_minor_units: priceMinor,
             compare_at_price_minor_units: compareMinor,
             clear_compare_at_price: compareMinor === null,
@@ -259,8 +275,10 @@ export function MenuItemDrawer({
           method: "POST",
           body: JSON.stringify({
             category_id: categoryId,
+            sku: sku.trim() || null,
             name: name.trim(),
             description: description.trim() || null,
+            translations_json: translationsPayload,
             price_minor_units: priceMinor,
             compare_at_price_minor_units: compareMinor,
             image_asset_id: imageAssetId,
@@ -306,7 +324,7 @@ export function MenuItemDrawer({
             type="button"
             onClick={handleAttemptClose}
             aria-label="Close item drawer"
-            className="min-h-[40px] rounded-lg p-2 hover:bg-black/10"
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 hover:bg-black/10"
           >
             <X className="h-4 w-4" />
           </button>
@@ -338,7 +356,7 @@ export function MenuItemDrawer({
               )}
 
               <div className="flex flex-1 flex-col gap-2">
-                <label className="inline-flex min-h-[40px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-black/5 px-3 py-1.5 text-xs font-semibold hover:opacity-80">
+                <label className="inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-black/5 px-3 py-1.5 text-xs font-semibold hover:opacity-80">
                   <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{uploading ? "Uploading..." : "Upload Image"}</span>
                   <input
@@ -376,7 +394,7 @@ export function MenuItemDrawer({
                   setDirty(true);
                 }}
                 placeholder="Wood-fired margherita pizza with fresh basil"
-                className="min-h-[38px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 py-1 text-xs"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 py-1 text-xs"
               />
             </label>
           </div>
@@ -390,7 +408,7 @@ export function MenuItemDrawer({
                   setCategoryId(e.target.value);
                   setDirty(true);
                 }}
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-sm"
               >
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -411,7 +429,7 @@ export function MenuItemDrawer({
                   setDirty(true);
                 }}
                 placeholder="e.g. Paneer Tikka Platter"
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
               />
             </label>
 
@@ -430,6 +448,48 @@ export function MenuItemDrawer({
             </label>
 
             <label className="flex flex-col gap-1 text-xs font-medium">
+              SKU (optional, unique per venue)
+              <input
+                maxLength={64}
+                value={sku}
+                onChange={(e) => {
+                  setSku(e.target.value);
+                  setDirty(true);
+                }}
+                placeholder="e.g. STR-001"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-medium">
+              Hindi Name (हिन्दी नाम, optional)
+              <input
+                maxLength={120}
+                value={hiName}
+                onChange={(e) => {
+                  setHiName(e.target.value);
+                  setDirty(true);
+                }}
+                placeholder="पनीर टिक्का प्लैटर"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-medium sm:col-span-2">
+              Hindi Description (हिन्दी विवरण, optional)
+              <input
+                maxLength={500}
+                value={hiDesc}
+                onChange={(e) => {
+                  setHiDesc(e.target.value);
+                  setDirty(true);
+                }}
+                placeholder="अंगारों पर भुना हुआ पनीर..."
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-xs"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-medium">
               Price ({currencyCode})
               <input
                 required
@@ -439,7 +499,7 @@ export function MenuItemDrawer({
                   setPriceText(e.target.value);
                   setDirty(true);
                 }}
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
               />
             </label>
 
@@ -453,7 +513,7 @@ export function MenuItemDrawer({
                   setDirty(true);
                 }}
                 placeholder="Strikethrough price"
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 font-mono text-sm"
               />
             </label>
 
@@ -468,7 +528,7 @@ export function MenuItemDrawer({
                   setPrepMinutes(e.target.value);
                   setDirty(true);
                 }}
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
               />
             </label>
 
@@ -586,7 +646,7 @@ export function MenuItemDrawer({
                     setVariants((v) => [...v, { name: "", priceStr: priceText, is_available: true }]);
                     setDirty(true);
                   }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1 text-[11px] font-semibold"
+                  className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-[11px] font-semibold"
                 >
                   <Plus className="h-3 w-3" aria-hidden="true" />
                   Add Variant
@@ -606,7 +666,7 @@ export function MenuItemDrawer({
                       }}
                       placeholder="Half / Regular / Large"
                       aria-label={`Variant ${idx + 1} name`}
-                      className="min-h-[38px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 text-xs"
+                      className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 text-xs"
                     />
                     <input
                       inputMode="decimal"
@@ -619,7 +679,7 @@ export function MenuItemDrawer({
                         setDirty(true);
                       }}
                       aria-label={`Variant ${idx + 1} price`}
-                      className="min-h-[38px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 font-mono text-xs"
+                      className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-2.5 font-mono text-xs"
                     />
                     <button
                       type="button"
@@ -628,7 +688,7 @@ export function MenuItemDrawer({
                         setDirty(true);
                       }}
                       aria-label={`Remove variant ${idx + 1}`}
-                      className="rounded p-1.5 text-red-600 hover:bg-red-500/10"
+                      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-red-600 hover:bg-red-500/10"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>

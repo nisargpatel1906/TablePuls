@@ -161,7 +161,7 @@ export default function LiveFloorPage() {
             <button
               type="button"
               onClick={() => void refresh()}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold hover:opacity-80"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold hover:opacity-80"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
               {t(locale, "action.refresh")}

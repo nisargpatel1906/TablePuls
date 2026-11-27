@@ -310,7 +310,7 @@ export default function AlertRulesSettingsPage() {
                   type="button"
                   disabled={testingWebhook}
                   onClick={() => void handleTestWebhook()}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
                 >
                   <Send className="h-3.5 w-3.5" aria-hidden="true" />
                   {testingWebhook ? "Sending..." : "Send Test Webhook"}

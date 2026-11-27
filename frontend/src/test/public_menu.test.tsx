@@ -136,4 +136,104 @@ describe("SCR-022 Public Digital Menu Isolation & Behavior", () => {
     render(<PublicDigitalMenu qrToken="tok_old" />);
     await waitFor(() => expect(screen.getByText("Table QR Replaced")).toBeTruthy());
   });
+
+  it("localizes menu/category/item names in Hindi and loads paginated slices via headers", async () => {
+    const baseMenu = SAMPLE_PAYLOAD.data.menus[0];
+    const baseCat = baseMenu?.categories[0];
+    const baseItem0 = baseCat?.items[0];
+    const baseItem1 = baseCat?.items[1];
+    if (!baseMenu || !baseCat || !baseItem0 || !baseItem1) {
+      throw new Error("Missing sample menu fixture");
+    }
+    const page1 = {
+      success: true,
+      data: {
+        ...SAMPLE_PAYLOAD.data,
+        menus: [
+          {
+            ...baseMenu,
+            translations_json: { hi: { name: "पूरा दिन" } },
+            categories: [
+              {
+                ...baseCat,
+                translations_json: { hi: { name: "स्टार्टर्स" } },
+                items: [
+                  {
+                    ...baseItem0,
+                    translations_json: {
+                      hi: { name: "पनीर टिक्का", description: "तंदूरी पनीर" },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const page2 = {
+      success: true,
+      data: {
+        ...SAMPLE_PAYLOAD.data,
+        menus: [
+          {
+            ...baseMenu,
+            categories: [
+              {
+                ...baseCat,
+                items: [
+                  {
+                    ...baseItem1,
+                    translations_json: { hi: { name: "लैम्ब चॉप्स" } },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page1), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Total-Items": "2",
+            "X-Has-More": "true",
+            "X-Next-Offset": "1",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page2), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Total-Items": "2",
+            "X-Has-More": "false",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<PublicDigitalMenu qrToken="tok_large" />);
+    await waitFor(() => expect(screen.getByText("Paneer Tikka")).toBeTruthy());
+
+    // Switch to Hindi -> localized names appear without extra fetch
+    fireEvent.click(screen.getByRole("button", { name: "Toggle language" }));
+    expect(screen.getByText("स्टार्टर्स")).toBeTruthy();
+    expect(screen.getByText("पनीर टिक्का")).toBeTruthy();
+    expect(screen.getByText("तंदूरी पनीर")).toBeTruthy();
+
+    // Load page 2 progressively via X-Has-More / X-Next-Offset
+    const moreBtn = screen.getByRole("button", { name: /और व्यंजन लोड करें/i });
+    fireEvent.click(moreBtn);
+    await waitFor(() => expect(screen.getByText("लैम्ब चॉप्स")).toBeTruthy());
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondCall = fetchSpy.mock.calls[1] as [string, RequestInit] | undefined;
+    expect(String(secondCall?.[0])).toContain("offset=1&limit=100");
+    expect(secondCall?.[1].credentials).toBe("omit");
+  });
 });

@@ -6,10 +6,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   AlertTriangle,
+  BarChart3,
   Check,
   Copy,
   Download,
   ExternalLink,
+  FileArchive,
   FileDown,
   Lock,
   QrCode,
@@ -95,9 +97,21 @@ export default function QrCodesManagerPage() {
   const [sectionFilter, setSectionFilter] = useState("ALL");
   const [neverScanned30d, setNeverScanned30d] = useState(false);
 
+interface QrStatsSummary {
+  days: number;
+  total_scans_all_time: number;
+  total_scans_window: number;
+  by_day: Array<{ date: string; scans: number }>;
+  by_table: Array<{ table_id: string; table_code: string; section_name: string; scan_count: number }>;
+}
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [pdfLayout, setPdfLayout] = useState<"A4_4UP" | "A4_6UP" | "LETTER_4UP">("A4_4UP");
+  const [pdfLayout, setPdfLayout] = useState<
+    "A4_4UP" | "A4_6UP" | "A6_1UP" | "A4_STICKER_12UP" | "LETTER_4UP"
+  >("A4_4UP");
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
+  const [scanStats, setScanStats] = useState<QrStatsSummary | null>(null);
 
   // Regenerate modal
   const [regenTarget, setRegenTarget] = useState<QRCodeItemDTO | null>(null);
@@ -118,10 +132,16 @@ export default function QrCodesManagerPage() {
       });
       if (sectionFilter !== "ALL") qs.set("section", sectionFilter);
       if (search.trim()) qs.set("search", search.trim());
-      const res = await apiFetch<{ items: QRCodeItemDTO[]; total: number }>(
-        `/api/v1/venues/${venueId}/qr-codes?${qs.toString()}`,
-      );
+      const [res, statsRes] = await Promise.all([
+        apiFetch<{ items: QRCodeItemDTO[]; total: number }>(
+          `/api/v1/venues/${venueId}/qr-codes?${qs.toString()}`,
+        ),
+        apiFetch<QrStatsSummary>(`/api/v1/venues/${venueId}/qr-codes/stats?days=30`).catch(
+          () => null,
+        ),
+      ]);
       setItems(res.items || []);
+      if (statsRes) setScanStats(statsRes);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load table QR codes");
     } finally {
@@ -204,6 +224,44 @@ export default function QrCodesManagerPage() {
       setError("Failed to export printable QR PDF");
     } finally {
       setExportingPdf(false);
+    }
+  }
+
+  async function handleExportBatchZip() {
+    if (!venueId || selectedIds.length === 0) return;
+    setExportingZip(true);
+    setError(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const token = getAccessToken();
+      const res = await fetch(`${base}/api/v1/venues/${venueId}/qr/export-zip`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          table_ids: selectedIds,
+          format: "both",
+          framed: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "table-qr-codes.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setSuccessMsg(`Downloaded ZIP archive of SVG & PNG QR cards for ${selectedIds.length} tables.`);
+    } catch {
+      setError("Failed to download batch QR ZIP");
+    } finally {
+      setExportingZip(false);
     }
   }
 
@@ -350,7 +408,7 @@ export default function QrCodesManagerPage() {
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search tables..."
                     aria-label="Search QR tables"
-                    className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] py-1.5 pl-8 pr-3 text-xs"
+                    className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] py-1.5 pl-8 pr-3 text-xs"
                   />
                 </label>
 
@@ -386,7 +444,7 @@ export default function QrCodesManagerPage() {
                       selectedIds.length === activeIds.length ? [] : activeIds,
                     )
                   }
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold"
                 >
                   {selectedIds.length === activeIds.length && activeIds.length > 0
                     ? "Clear Selection"
@@ -396,27 +454,71 @@ export default function QrCodesManagerPage() {
                   aria-label="Print sheet layout"
                   value={pdfLayout}
                   onChange={(e) =>
-                    setPdfLayout(e.target.value as "A4_4UP" | "A4_6UP" | "LETTER_4UP")
+                    setPdfLayout(
+                      e.target.value as
+                        | "A4_4UP"
+                        | "A4_6UP"
+                        | "A6_1UP"
+                        | "A4_STICKER_12UP"
+                        | "LETTER_4UP",
+                    )
                   }
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
                 >
                   <option value="A4_4UP">A4 · 4-Up Table Tents</option>
                   <option value="A4_6UP">A4 · 6-Up Stickers</option>
+                  <option value="A6_1UP">A6 · 1-Up Large Tent</option>
+                  <option value="A4_STICKER_12UP">A4 · 12-Up Stickers</option>
                   <option value="LETTER_4UP">US Letter · 4-Up</option>
                 </select>
                 <button
                   type="button"
                   disabled={selectedIds.length === 0 || exportingPdf}
                   onClick={() => void handleExportBatchPdf()}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
                   {exportingPdf
                     ? "Rendering PDF..."
                     : `Export Batch PDF (${selectedIds.length})`}
                 </button>
+                <button
+                  type="button"
+                  disabled={selectedIds.length === 0 || exportingZip}
+                  onClick={() => void handleExportBatchZip()}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  <FileArchive className="h-3.5 w-3.5" aria-hidden="true" />
+                  {exportingZip ? "Packaging ZIP..." : `Download ZIP (${selectedIds.length})`}
+                </button>
               </div>
             </div>
+
+            {scanStats && (
+              <section
+                aria-label="Aggregate 30-day QR scan statistics"
+                className="tp-glass flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs"
+              >
+                <div className="flex items-center gap-2 font-semibold">
+                  <BarChart3 className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />
+                  <span>Aggregate Scan Activity ({scanStats.days}d, no PII tracked)</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <span>
+                    Last {scanStats.days}d: <strong>{scanStats.total_scans_window}</strong>
+                  </span>
+                  <span>
+                    All-time scans: <strong>{scanStats.total_scans_all_time}</strong>
+                  </span>
+                  {scanStats.by_table[0] && (
+                    <span>
+                      Top table: <strong>{scanStats.by_table[0].table_code}</strong> (
+                      {scanStats.by_table[0].scan_count})
+                    </span>
+                  )}
+                </div>
+              </section>
+            )}
 
             {loading && (
               <div className="tp-glass rounded-xl border p-8 text-center text-sm text-[var(--text-secondary)]">
@@ -546,7 +648,7 @@ export default function QrCodesManagerPage() {
                           onClick={() =>
                             void downloadSingleAsset(item.table_id, item.table_code, "png")
                           }
-                          className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
+                          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
                         >
                           <Download className="h-3.5 w-3.5" aria-hidden="true" />
                           PNG
@@ -556,7 +658,7 @@ export default function QrCodesManagerPage() {
                           onClick={() =>
                             void downloadSingleAsset(item.table_id, item.table_code, "svg")
                           }
-                          className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
+                          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
                         >
                           <Download className="h-3.5 w-3.5" aria-hidden="true" />
                           SVG
@@ -564,7 +666,7 @@ export default function QrCodesManagerPage() {
                         <button
                           type="button"
                           onClick={() => void handleCopyPreviewLink(item)}
-                          className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
+                          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
                         >
                           <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                           Preview Link
@@ -577,7 +679,7 @@ export default function QrCodesManagerPage() {
                               setRegenReason("DAMAGED");
                               setRegenGraceDays(7);
                             }}
-                            className="ml-auto inline-flex min-h-[38px] items-center gap-1 rounded-lg bg-amber-600/15 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-600/25 dark:text-amber-300"
+                            className="ml-auto inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-amber-600/15 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-600/25 dark:text-amber-300"
                           >
                             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                             Regenerate

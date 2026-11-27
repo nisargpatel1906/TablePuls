@@ -199,7 +199,7 @@ export default function UsersAndAuditPage() {
               <button
                 type="button"
                 onClick={() => setShowInvite((v) => !v)}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 Invite User

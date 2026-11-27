@@ -54,6 +54,8 @@ const PUBLIC_LABELS = {
     errorTitle: "Menu Temporarily Unavailable",
     retry: "Try Again",
     previewBanner: "Staff Preview Mode — scans are not counted",
+    loadMore: "Load more dishes",
+    loadingMore: "Loading more...",
     disclaimer:
       "Menu items, prices, and availability are provided by the restaurant and may change. Please notify your server of any severe food allergies before ordering.",
   },
@@ -85,6 +87,8 @@ const PUBLIC_LABELS = {
     errorTitle: "मेनू अस्थायी रूप से अनुपलब्ध है",
     retry: "पुनः प्रयास करें",
     previewBanner: "स्टाफ़ पूर्वावलोकन मोड — स्कैन गिने नहीं जाते",
+    loadMore: "और व्यंजन लोड करें",
+    loadingMore: "और व्यंजन लोड हो रहे हैं...",
     disclaimer:
       "व्यंजन, मूल्य और उपलब्धता रेस्टोरेंट द्वारा प्रदान की गई हैं। किसी भी फ़ूड एलर्जी की जानकारी ऑर्डर से पहले अवश्य दें।",
   },
@@ -106,6 +110,17 @@ function itemMatchesDietaryFilter(tags: string[], filterKey: string): boolean {
   return tags.includes(filterKey);
 }
 
+function localizedText(
+  translations: Record<string, { name?: string; description?: string }> | undefined,
+  locale: "en" | "hi",
+  field: "name" | "description",
+  fallback: string | null | undefined,
+): string {
+  const tr = translations?.[locale]?.[field];
+  if (typeof tr === "string" && tr.trim()) return tr;
+  return fallback || "";
+}
+
 export function PublicDigitalMenu({
   qrToken,
   previewParam,
@@ -114,6 +129,9 @@ export function PublicDigitalMenu({
   const [theme, setTheme] = useState<"light" | "dark">(initialTheme);
   const [locale, setLocale] = useState<"en" | "hi">("en");
   const [data, setData] = useState<PublicMenuPayload | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -149,9 +167,16 @@ export function PublicDigitalMenu({
         setErrorCode(json.error?.code || `HTTP_${res.status}`);
         setErrorMsg(json.error?.message || "Unable to load digital menu");
         setData(null);
+        setHasMore(false);
+        setNextOffset(null);
         return;
       }
       setData(json.data);
+      const moreFlag = res.headers.get("X-Has-More") === "true";
+      const offHdr = res.headers.get("X-Next-Offset");
+      const parsedOff = offHdr !== null ? Number(offHdr) : null;
+      setHasMore(moreFlag && parsedOff !== null && !Number.isNaN(parsedOff));
+      setNextOffset(parsedOff !== null && !Number.isNaN(parsedOff) ? parsedOff : null);
       const firstMenu = json.data.menus[0];
       setActiveMenuId((prev) =>
         prev && json.data?.menus.some((m) => m.id === prev) ? prev : firstMenu?.id || "",
@@ -163,6 +188,69 @@ export function PublicDigitalMenu({
       setLoading(false);
     }
   }, [qrToken, previewParam]);
+
+  async function loadMoreDishes() {
+    if (!qrToken || !hasMore || nextOffset === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const params = new URLSearchParams({
+        offset: String(nextOffset),
+        limit: "100",
+      });
+      if (previewParam) params.set("p", previewParam);
+      const res = await fetch(
+        `${base}/api/v1/public/menu/${encodeURIComponent(qrToken)}?${params.toString()}`,
+        {
+          method: "GET",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+        },
+      );
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: PublicMenuPayload;
+      };
+      if (!res.ok || !json.success || !json.data) return;
+      const incomingMenus = json.data.menus;
+      setData((prev) => {
+        if (!prev) return json.data!;
+        const mergedMenus = [...prev.menus];
+        for (const incomingMenu of incomingMenus) {
+          const mIdx = mergedMenus.findIndex((m) => m.id === incomingMenu.id);
+          const existingMenu = mIdx >= 0 ? mergedMenus[mIdx] : undefined;
+          if (!existingMenu) {
+            mergedMenus.push(incomingMenu);
+            continue;
+          }
+          const mergedCats = [...existingMenu.categories];
+          for (const incomingCat of incomingMenu.categories) {
+            const cIdx = mergedCats.findIndex((c) => c.id === incomingCat.id);
+            const existingCat = cIdx >= 0 ? mergedCats[cIdx] : undefined;
+            if (!existingCat) {
+              mergedCats.push(incomingCat);
+            } else {
+              const seenIds = new Set(existingCat.items.map((x) => x.id));
+              const addItems = incomingCat.items.filter((x) => !seenIds.has(x.id));
+              mergedCats[cIdx] = {
+                ...existingCat,
+                items: [...existingCat.items, ...addItems],
+              };
+            }
+          }
+          mergedMenus[mIdx] = { ...existingMenu, categories: mergedCats };
+        }
+        return { ...prev, menus: mergedMenus };
+      });
+      const moreFlag = res.headers.get("X-Has-More") === "true";
+      const offHdr = res.headers.get("X-Next-Offset");
+      const parsedOff = offHdr !== null ? Number(offHdr) : null;
+      setHasMore(moreFlag && parsedOff !== null && !Number.isNaN(parsedOff));
+      setNextOffset(parsedOff !== null && !Number.isNaN(parsedOff) ? parsedOff : null);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     void loadMenu();
@@ -194,14 +282,16 @@ export function PublicDigitalMenu({
             return false;
           }
           if (q) {
-            const hay = `${it.name} ${it.description || ""}`.toLowerCase();
+            const locName = localizedText(it.translations_json, locale, "name", it.name);
+            const locDesc = localizedText(it.translations_json, locale, "description", it.description);
+            const hay = `${it.name} ${it.description || ""} ${locName} ${locDesc}`.toLowerCase();
             if (!hay.includes(q)) return false;
           }
           return true;
         }),
       }))
       .filter((cat) => cat.items.length > 0);
-  }, [currentMenu, search, dietFilter]);
+  }, [currentMenu, search, dietFilter, locale]);
 
   const baseMediaOrigin = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
@@ -345,7 +435,7 @@ export function PublicDigitalMenu({
                         : "border border-[var(--border-subtle)] bg-[var(--surface-solid)]"
                     }`}
                   >
-                    {m.name}
+                    {localizedText(m.translations_json, locale, "name", m.name)}
                   </button>
                 ))}
               </div>
@@ -397,7 +487,7 @@ export function PublicDigitalMenu({
                       href={`#cat-${cat.id}`}
                       className="inline-flex min-h-[44px] shrink-0 items-center px-2 text-xs font-bold text-[var(--accent-primary)] hover:underline"
                     >
-                      {cat.name}
+                      {localizedText(cat.translations_json, locale, "name", cat.name)}
                     </a>
                   ))}
                 </nav>
@@ -425,14 +515,31 @@ export function PublicDigitalMenu({
                 {filteredCategories.map((cat) => (
                   <section key={cat.id} id={`cat-${cat.id}`} className="scroll-mt-36">
                     <div className="mb-2.5">
-                      <h2 className="text-base font-bold tracking-tight">{cat.name}</h2>
-                      {cat.description && (
-                        <p className="text-xs text-[var(--text-secondary)]">{cat.description}</p>
+                      <h2 className="text-base font-bold tracking-tight">
+                        {localizedText(cat.translations_json, locale, "name", cat.name)}
+                      </h2>
+                      {localizedText(cat.translations_json, locale, "description", cat.description) && (
+                        <p className="text-xs text-[var(--text-secondary)]">
+                          {localizedText(cat.translations_json, locale, "description", cat.description)}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-3">
-                      {cat.items.map((item) => (
+                      {cat.items.map((item) => {
+                        const dispName = localizedText(
+                          item.translations_json,
+                          locale,
+                          "name",
+                          item.name,
+                        );
+                        const dispDesc = localizedText(
+                          item.translations_json,
+                          locale,
+                          "description",
+                          item.description,
+                        );
+                        return (
                         <button
                           key={item.id}
                           type="button"
@@ -444,7 +551,7 @@ export function PublicDigitalMenu({
                           <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
                             <div>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-sm font-bold">{item.name}</span>
+                                <span className="text-sm font-bold">{dispName}</span>
                                 {item.is_featured && (
                                   <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                                     <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
@@ -457,9 +564,9 @@ export function PublicDigitalMenu({
                                   </span>
                                 )}
                               </div>
-                              {item.description && (
+                              {dispDesc && (
                                 <p className="mt-0.5 line-clamp-2 text-xs text-[var(--text-secondary)]">
-                                  {item.description}
+                                  {dispDesc}
                                 </p>
                               )}
                             </div>
@@ -495,16 +602,30 @@ export function PublicDigitalMenu({
                           {item.thumb_url && (
                             <img
                               src={`${baseMediaOrigin}${item.thumb_url}`}
-                              alt={item.image_alt || item.name}
+                              alt={item.image_alt || dispName}
                               loading="lazy"
                               className="h-24 w-24 shrink-0 rounded-xl border border-[var(--border-subtle)] object-cover"
                             />
                           )}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
                 ))}
+
+                {hasMore && nextOffset !== null && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={() => void loadMoreDishes()}
+                      className="min-h-[44px] rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-5 py-2.5 text-xs font-bold hover:opacity-85 disabled:opacity-50"
+                    >
+                      {loadingMore ? lbl.loadingMore : lbl.loadMore}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -530,7 +651,9 @@ export function PublicDigitalMenu({
           >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h2 className="text-lg font-bold">{activeItem.name}</h2>
+                <h2 className="text-lg font-bold">
+                  {localizedText(activeItem.translations_json, locale, "name", activeItem.name)}
+                </h2>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="font-mono text-base font-bold">
                     {formatMinorUnits(
@@ -573,9 +696,19 @@ export function PublicDigitalMenu({
               />
             )}
 
-            {activeItem.description && (
+            {localizedText(
+              activeItem.translations_json,
+              locale,
+              "description",
+              activeItem.description,
+            ) && (
               <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-                {activeItem.description}
+                {localizedText(
+                  activeItem.translations_json,
+                  locale,
+                  "description",
+                  activeItem.description,
+                )}
               </p>
             )}
 

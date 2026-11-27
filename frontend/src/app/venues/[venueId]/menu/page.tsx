@@ -25,6 +25,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Clock,
   Copy,
   Download,
   Edit3,
@@ -35,6 +36,7 @@ import {
   Settings2,
   Smartphone,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -171,12 +173,34 @@ function SortableCategoryRow({
   );
 }
 
+interface CsvPreviewRow {
+  row_number: number;
+  sku: string | null;
+  name: string;
+  category_name: string;
+  action: "create" | "update" | "error";
+  errors: string[];
+}
+
+interface CsvPreviewResult {
+  import_id: string;
+  mode: string;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  will_create: number;
+  will_update: number;
+  rows: CsvPreviewRow[];
+}
+
 export default function MenuStudioPage() {
   const params = useParams<{ venueId: string }>();
   const venueId = params?.venueId || "";
-  const { user, loading: authLoading, locale } = useAuth();
+  const { user, policies, loading: authLoading, locale } = useAuth();
   const canRead = hasCapability(user?.role, "menu.read");
-  const canManage = hasCapability(user?.role, "menu.manage");
+  const canManage =
+    hasCapability(user?.role, "menu.manage") &&
+    (user?.role !== "MANAGER" || policies.managers_can_manage_menu);
   const isOwner = user?.role === "OWNER";
 
   const [settings, setSettings] = useState<VenueMenuSettings | null>(null);
@@ -188,7 +212,9 @@ export default function MenuStudioPage() {
 
   const [search, setSearch] = useState("");
   const [availFilter, setAvailFilter] = useState<"all" | "available" | "unavailable">("all");
+  const [availPreset, setAvailPreset] = useState<"indefinite" | "2h" | "tomorrow">("indefinite");
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [bulkTargetCatId, setBulkTargetCatId] = useState<string>("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +224,15 @@ export default function MenuStudioPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItemDTO | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // CSV Import Modal
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvMode, setCsvMode] = useState<"create_only" | "upsert_by_sku">("upsert_by_sku");
+  const [csvStrategy, setCsvStrategy] = useState<"all_or_nothing" | "skip_invalid">("all_or_nothing");
+  const [csvPreview, setCsvPreview] = useState<CsvPreviewResult | null>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
 
   // Settings Modal
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -214,6 +249,8 @@ export default function MenuStudioPage() {
   const [editingMenu, setEditingMenu] = useState<MenuDTO | null>(null);
   const [menuName, setMenuName] = useState("");
   const [menuDesc, setMenuDesc] = useState("");
+  const [menuHiName, setMenuHiName] = useState("");
+  const [menuHiDesc, setMenuHiDesc] = useState("");
   const [menuStatus, setMenuStatus] = useState<"DRAFT" | "PUBLISHED" | "ARCHIVED">("DRAFT");
   const [menuDefault, setMenuDefault] = useState(false);
   const [schedEnabled, setSchedEnabled] = useState(false);
@@ -226,6 +263,8 @@ export default function MenuStudioPage() {
   const [editingCat, setEditingCat] = useState<MenuCategoryDTO | null>(null);
   const [catName, setCatName] = useState("");
   const [catDesc, setCatDesc] = useState("");
+  const [catHiName, setCatHiName] = useState("");
+  const [catHiDesc, setCatHiDesc] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -365,6 +404,8 @@ export default function MenuStudioPage() {
     if (m) {
       setMenuName(m.name);
       setMenuDesc(m.description || "");
+      setMenuHiName(m.translations_json?.hi?.name || "");
+      setMenuHiDesc(m.translations_json?.hi?.description || "");
       setMenuStatus((m.status as "DRAFT" | "PUBLISHED" | "ARCHIVED") || "DRAFT");
       setMenuDefault(m.is_default);
       const win = m.schedule_json?.windows?.[0];
@@ -375,6 +416,8 @@ export default function MenuStudioPage() {
     } else {
       setMenuName("");
       setMenuDesc("");
+      setMenuHiName("");
+      setMenuHiDesc("");
       setMenuStatus("DRAFT");
       setMenuDefault(menus.length === 0);
       setSchedEnabled(false);
@@ -392,6 +435,10 @@ export default function MenuStudioPage() {
     const schedulePayload = schedEnabled
       ? { v: 1, windows: [{ days: schedDays, start: schedStart, end: schedEnd }] }
       : null;
+    const hiMenuEntry: Record<string, string> = {};
+    if (menuHiName.trim()) hiMenuEntry.name = menuHiName.trim();
+    if (menuHiDesc.trim()) hiMenuEntry.description = menuHiDesc.trim();
+    const translationsPayload = Object.keys(hiMenuEntry).length > 0 ? { hi: hiMenuEntry } : {};
     try {
       if (editingMenu) {
         await apiFetch(`/api/v1/venues/${venueId}/menus/${editingMenu.id}`, {
@@ -399,6 +446,7 @@ export default function MenuStudioPage() {
           body: JSON.stringify({
             name: menuName.trim(),
             description: menuDesc.trim() || null,
+            translations_json: translationsPayload,
             status: menuStatus,
             is_default: menuDefault,
             schedule_json: schedulePayload,
@@ -412,6 +460,7 @@ export default function MenuStudioPage() {
           body: JSON.stringify({
             name: menuName.trim(),
             description: menuDesc.trim() || null,
+            translations_json: translationsPayload,
             status: menuStatus,
             is_default: menuDefault,
             schedule_json: schedulePayload,
@@ -425,6 +474,23 @@ export default function MenuStudioPage() {
       await loadMenus();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save menu");
+    }
+  }
+
+  async function duplicateActiveMenu() {
+    if (!venueId || !activeMenu) return;
+    setError(null);
+    try {
+      const duplicated = await apiFetch<MenuDTO>(
+        `/api/v1/venues/${venueId}/menus/${activeMenu.id}/duplicate`,
+        { method: "POST" },
+      );
+      setSelectedMenuId(duplicated.id);
+      setSelectedCatId("ALL");
+      setSuccessMsg(`Duplicated menu "${activeMenu.name}" as DRAFT "${duplicated.name}".`);
+      await loadMenus();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to duplicate menu");
     }
   }
 
@@ -446,6 +512,10 @@ export default function MenuStudioPage() {
   async function saveCategoryModal(e: React.FormEvent) {
     e.preventDefault();
     if (!venueId || !selectedMenuId) return;
+    const hiCatEntry: Record<string, string> = {};
+    if (catHiName.trim()) hiCatEntry.name = catHiName.trim();
+    if (catHiDesc.trim()) hiCatEntry.description = catHiDesc.trim();
+    const translationsPayload = Object.keys(hiCatEntry).length > 0 ? { hi: hiCatEntry } : {};
     try {
       if (editingCat) {
         await apiFetch(`/api/v1/venues/${venueId}/categories/${editingCat.id}`, {
@@ -453,6 +523,7 @@ export default function MenuStudioPage() {
           body: JSON.stringify({
             name: catName.trim(),
             description: catDesc.trim() || null,
+            translations_json: translationsPayload,
           }),
         });
         setSuccessMsg(`Updated category "${catName.trim()}".`);
@@ -462,6 +533,7 @@ export default function MenuStudioPage() {
           body: JSON.stringify({
             name: catName.trim(),
             description: catDesc.trim() || null,
+            translations_json: translationsPayload,
           }),
         });
         setSuccessMsg(`Added category "${catName.trim()}".`);
@@ -520,30 +592,65 @@ export default function MenuStudioPage() {
     void persistCategoryOrder(arrayMove(categories, idx, targetIdx));
   }
 
+  function computeUnavailableUntilIso(preset: "indefinite" | "2h" | "tomorrow"): string | null {
+    if (preset === "indefinite") return null;
+    if (preset === "2h") {
+      return new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+    }
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+
   async function toggleQuick86(item: MenuItemDTO) {
     if (!venueId) return;
     const next = !item.is_available;
-    setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, is_available: next } : x)));
+    const unavailIso = next ? null : computeUnavailableUntilIso(availPreset);
+    setItems((prev) =>
+      prev.map((x) =>
+        x.id === item.id ? { ...x, is_available: next, unavailable_until: unavailIso } : x,
+      ),
+    );
     try {
       await apiFetch(`/api/v1/venues/${venueId}/menu-items/${item.id}/availability`, {
         method: "PATCH",
-        body: JSON.stringify({ is_available: next }),
+        body: JSON.stringify({ is_available: next, unavailable_until: unavailIso }),
       });
-      setSuccessMsg(`${item.name}: ${next ? "In Stock" : "Sold Out (86'd)"}.`);
+      setSuccessMsg(
+        `${item.name}: ${
+          next
+            ? "In Stock"
+            : unavailIso
+              ? `Sold Out (auto-restores ${new Date(unavailIso).toLocaleTimeString()})`
+              : "Sold Out (86'd)"
+        }.`,
+      );
     } catch (err) {
-      setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, is_available: !next } : x)));
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === item.id
+            ? { ...x, is_available: !next, unavailable_until: item.unavailable_until }
+            : x,
+        ),
+      );
       setError(err instanceof ApiError ? err.message : "Failed to toggle item availability");
     }
   }
 
   async function bulkSetAvailability(isAvailable: boolean) {
     if (!venueId || selectedItemIds.length === 0) return;
+    const unavailIso = isAvailable ? null : computeUnavailableUntilIso(availPreset);
     try {
       const res = await apiFetch<{ updated_count: number }>(
         `/api/v1/venues/${venueId}/menu-items/bulk-availability`,
         {
           method: "PATCH",
-          body: JSON.stringify({ item_ids: selectedItemIds, is_available: isAvailable }),
+          body: JSON.stringify({
+            item_ids: selectedItemIds,
+            is_available: isAvailable,
+            unavailable_until: unavailIso,
+          }),
         },
       );
       setSelectedItemIds([]);
@@ -553,6 +660,135 @@ export default function MenuStudioPage() {
       await loadCategoriesAndItems();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed bulk availability update");
+    }
+  }
+
+  async function bulkItemAction(action: "delete" | "move") {
+    if (!venueId || selectedItemIds.length === 0) return;
+    const targetCat = bulkTargetCatId || categories[0]?.id || "";
+    if (action === "move" && !targetCat) {
+      setError("Select a destination category first.");
+      return;
+    }
+    if (
+      action === "delete" &&
+      !window.confirm(`Archive ${selectedItemIds.length} selected dishes?`)
+    ) {
+      return;
+    }
+    try {
+      const res = await apiFetch<{ affected: number }>(
+        `/api/v1/venues/${venueId}/menu-items/bulk-action`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action,
+            item_ids: selectedItemIds,
+            ...(action === "move" ? { target_category_id: targetCat } : {}),
+          }),
+        },
+      );
+      setSelectedItemIds([]);
+      setSuccessMsg(
+        action === "delete"
+          ? `Archived ${res.affected} selected items.`
+          : `Moved ${res.affected} selected items to target category.`,
+      );
+      await Promise.all([loadMenus(), loadCategoriesAndItems()]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed bulk menu item action");
+    }
+  }
+
+  async function downloadCsvTemplate() {
+    if (!venueId) return;
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const token = getAccessToken();
+      const res = await fetch(`${base}/api/v1/venues/${venueId}/menus/import/template`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tablepulse-menu-import-template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setCsvError("Failed to download CSV template");
+    }
+  }
+
+  async function previewCsvImport() {
+    if (!venueId || !selectedMenuId || !csvFile) return;
+    if (csvFile.size > 2 * 1024 * 1024) {
+      setCsvError("CSV file exceeds the 2 MB maximum upload limit.");
+      return;
+    }
+    setCsvBusy(true);
+    setCsvError(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const token = getAccessToken();
+      const fd = new FormData();
+      fd.append("file", csvFile);
+      const res = await fetch(
+        `${base}/api/v1/venues/${venueId}/menus/import/preview?menu_id=${encodeURIComponent(
+          selectedMenuId,
+        )}&mode=${encodeURIComponent(csvMode)}`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
+          body: fd,
+        },
+      );
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: CsvPreviewResult;
+        error?: { message?: string };
+      };
+      if (!res.ok || !json.success || !json.data) {
+        setCsvError(json.error?.message || `Preview failed (HTTP ${res.status})`);
+        setCsvPreview(null);
+        return;
+      }
+      setCsvPreview(json.data);
+    } catch {
+      setCsvError("Failed to upload and preview CSV file.");
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+
+  async function commitCsvImport() {
+    if (!venueId || !csvPreview) return;
+    setCsvBusy(true);
+    setCsvError(null);
+    try {
+      const res = await apiFetch<{ created: number; updated: number; skipped: number }>(
+        `/api/v1/venues/${venueId}/menus/import/${csvPreview.import_id}/commit`,
+        {
+          method: "POST",
+          body: JSON.stringify({ strategy: csvStrategy }),
+        },
+      );
+      setCsvOpen(false);
+      setCsvFile(null);
+      setCsvPreview(null);
+      setSuccessMsg(
+        `CSV import complete: ${res.created} created, ${res.updated} updated, ${res.skipped} skipped.`,
+      );
+      await Promise.all([loadMenus(), loadCategoriesAndItems()]);
+    } catch (err) {
+      setCsvError(err instanceof ApiError ? err.message : "Failed to commit CSV import");
+    } finally {
+      setCsvBusy(false);
     }
   }
 
@@ -663,10 +899,24 @@ export default function MenuStudioPage() {
               className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-40"
             >
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
-              CSV
+              Export CSV
             </button>
             {canManage && (
               <>
+                <button
+                  type="button"
+                  disabled={!selectedMenuId}
+                  onClick={() => {
+                    setCsvFile(null);
+                    setCsvPreview(null);
+                    setCsvError(null);
+                    setCsvOpen(true);
+                  }}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-40"
+                >
+                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                  Import CSV
+                </button>
                 <button
                   type="button"
                   onClick={openSettings}
@@ -740,11 +990,19 @@ export default function MenuStudioPage() {
                 ))}
               </div>
               {canManage && activeMenu && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void duplicateActiveMenu()}
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold"
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    Duplicate Menu
+                  </button>
                   <button
                     type="button"
                     onClick={() => openMenuModal(activeMenu)}
-                    className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold"
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold"
                   >
                     <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
                     Edit Menu
@@ -752,7 +1010,7 @@ export default function MenuStudioPage() {
                   <button
                     type="button"
                     onClick={() => void deleteActiveMenu()}
-                    className="inline-flex min-h-[38px] items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300"
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     Archive
@@ -801,9 +1059,11 @@ export default function MenuStudioPage() {
                           setEditingCat(null);
                           setCatName("");
                           setCatDesc("");
+                          setCatHiName("");
+                          setCatHiDesc("");
                           setCatModalOpen(true);
                         }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-[11px] font-semibold"
+                        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-[11px] font-semibold"
                       >
                         <Plus className="h-3 w-3" />
                         Add Category
@@ -846,6 +1106,8 @@ export default function MenuStudioPage() {
                               setEditingCat(cat);
                               setCatName(cat.name);
                               setCatDesc(cat.description || "");
+                              setCatHiName(cat.translations_json?.hi?.name || "");
+                              setCatHiDesc(cat.translations_json?.hi?.description || "");
                               setCatModalOpen(true);
                             }}
                             onDelete={() => void handleDeleteCategory(cat)}
@@ -881,12 +1143,27 @@ export default function MenuStudioPage() {
                         onChange={(e) =>
                           setAvailFilter(e.target.value as "all" | "available" | "unavailable")
                         }
-                        className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                        className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
                       >
                         <option value="all">All Stock States</option>
                         <option value="available">In Stock Only</option>
                         <option value="unavailable">Sold Out (86)</option>
                       </select>
+
+                      {canQuick86 && (
+                        <select
+                          aria-label="Quick-86 auto-restore preset"
+                          value={availPreset}
+                          onChange={(e) =>
+                            setAvailPreset(e.target.value as "indefinite" | "2h" | "tomorrow")
+                          }
+                          className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                        >
+                          <option value="indefinite">86 Duration: Manual</option>
+                          <option value="2h">86 for 2 Hours</option>
+                          <option value="tomorrow">86 Until Tomorrow 09:00</option>
+                        </select>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -895,16 +1172,46 @@ export default function MenuStudioPage() {
                           <button
                             type="button"
                             onClick={() => void bulkSetAvailability(true)}
-                            className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white"
+                            className="min-h-[44px] rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white"
                           >
                             Mark In Stock ({selectedItemIds.length})
                           </button>
                           <button
                             type="button"
                             onClick={() => void bulkSetAvailability(false)}
-                            className="rounded-lg bg-amber-800 px-2.5 py-1.5 text-xs font-semibold text-white"
+                            className="min-h-[44px] rounded-lg bg-amber-800 px-2.5 py-1.5 text-xs font-semibold text-white"
                           >
-                            Mark 86 / Sold Out ({selectedItemIds.length})
+                            Mark 86 ({selectedItemIds.length})
+                          </button>
+                        </>
+                      )}
+                      {canManage && selectedItemIds.length > 0 && categories.length > 0 && (
+                        <>
+                          <select
+                            aria-label="Target category for bulk move"
+                            value={bulkTargetCatId || categories[0]?.id || ""}
+                            onChange={(e) => setBulkTargetCatId(e.target.value)}
+                            className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2 py-1.5 text-xs font-medium"
+                          >
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                Move to: {c.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => void bulkItemAction("move")}
+                            className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-semibold"
+                          >
+                            Move ({selectedItemIds.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void bulkItemAction("delete")}
+                            className="min-h-[44px] rounded-lg bg-red-600/90 px-2.5 py-1.5 text-xs font-semibold text-white"
+                          >
+                            Delete ({selectedItemIds.length})
                           </button>
                         </>
                       )}
@@ -915,7 +1222,7 @@ export default function MenuStudioPage() {
                             setEditingItem(null);
                             setDrawerOpen(true);
                           }}
-                          className="inline-flex min-h-[42px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3.5 py-2 text-xs font-semibold text-white"
+                          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3.5 py-2 text-xs font-semibold text-white"
                         >
                           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                           Add Dish
@@ -974,11 +1281,24 @@ export default function MenuStudioPage() {
                           <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
                             <div>
                               <div className="flex items-start justify-between gap-2">
-                                <h3 className="truncate text-sm font-bold">{item.name}</h3>
+                                <div className="min-w-0">
+                                  <h3 className="truncate text-sm font-bold">{item.name}</h3>
+                                  {item.sku && (
+                                    <span className="font-mono text-[10px] text-[var(--text-secondary)]">
+                                      SKU: {item.sku}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="shrink-0 font-mono text-xs font-bold">
                                   {formatMinorUnits(item.price_minor_units, currency, locale)}
                                 </span>
                               </div>
+                              {!item.is_available && item.unavailable_until && (
+                                <p className="mt-0.5 inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300">
+                                  <Clock className="h-2.5 w-2.5" aria-hidden="true" />
+                                  Auto-restores {new Date(item.unavailable_until).toLocaleString()}
+                                </p>
+                              )}
                               {item.description && (
                                 <p className="line-clamp-2 text-[11px] text-[var(--text-secondary)]">
                                   {item.description}
@@ -1004,7 +1324,7 @@ export default function MenuStudioPage() {
                                   type="button"
                                   aria-pressed={item.is_available}
                                   onClick={() => void toggleQuick86(item)}
-                                  className={`min-h-[34px] rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
+                                  className={`min-h-[44px] rounded-full px-3 py-1 text-[11px] font-bold transition ${
                                     item.is_available
                                       ? "bg-emerald-800 text-white"
                                       : "bg-amber-800 text-white"
@@ -1027,7 +1347,7 @@ export default function MenuStudioPage() {
                                       setDrawerOpen(true);
                                     }}
                                     aria-label={`Edit ${item.name}`}
-                                    className="rounded-lg border border-[var(--border-subtle)] p-1.5 hover:bg-black/10"
+                                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-[var(--border-subtle)] p-1.5 hover:bg-black/10"
                                   >
                                     <Edit3 className="h-3.5 w-3.5" />
                                   </button>
@@ -1035,7 +1355,7 @@ export default function MenuStudioPage() {
                                     type="button"
                                     onClick={() => void duplicateItem(item)}
                                     aria-label={`Duplicate ${item.name}`}
-                                    className="rounded-lg border border-[var(--border-subtle)] p-1.5 hover:bg-black/10"
+                                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-[var(--border-subtle)] p-1.5 hover:bg-black/10"
                                   >
                                     <Copy className="h-3.5 w-3.5" />
                                   </button>
@@ -1043,7 +1363,7 @@ export default function MenuStudioPage() {
                                     type="button"
                                     onClick={() => void deleteItem(item)}
                                     aria-label={`Delete ${item.name}`}
-                                    className="rounded-lg bg-red-500/15 p-1.5 text-red-600 hover:bg-red-500/25"
+                                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-red-500/15 p-1.5 text-red-600 hover:bg-red-500/25"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -1239,9 +1559,30 @@ export default function MenuStudioPage() {
                   maxLength={300}
                   value={menuDesc}
                   onChange={(e) => setMenuDesc(e.target.value)}
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
                 />
               </label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 font-medium">
+                  Hindi Menu Name (हिन्दी नाम, optional)
+                  <input
+                    maxLength={100}
+                    value={menuHiName}
+                    onChange={(e) => setMenuHiName(e.target.value)}
+                    placeholder="पूरा दिन मेनू"
+                    className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-medium">
+                  Hindi Description (optional)
+                  <input
+                    maxLength={300}
+                    value={menuHiDesc}
+                    onChange={(e) => setMenuHiDesc(e.target.value)}
+                    className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                  />
+                </label>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1 font-medium">
                   Publication Status
@@ -1381,7 +1722,26 @@ export default function MenuStudioPage() {
                   maxLength={300}
                   value={catDesc}
                   onChange={(e) => setCatDesc(e.target.value)}
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 font-medium">
+                Hindi Category Name (हिन्दी नाम, optional)
+                <input
+                  maxLength={100}
+                  value={catHiName}
+                  onChange={(e) => setCatHiName(e.target.value)}
+                  placeholder="शुरुआती व्यंजन"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 font-medium">
+                Hindi Description (optional)
+                <input
+                  maxLength={300}
+                  value={catHiDesc}
+                  onChange={(e) => setCatHiDesc(e.target.value)}
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-1.5 text-sm"
                 />
               </label>
             </div>
@@ -1389,18 +1749,194 @@ export default function MenuStudioPage() {
               <button
                 type="button"
                 onClick={() => setCatModalOpen(false)}
-                className="min-h-[42px] rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-xs font-semibold"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-xs font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="min-h-[42px] rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
+                className="min-h-[44px] rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
               >
                 Save Category
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Menu CSV Import Modal */}
+      {csvOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Import Menu CSV"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div>
+                <h2 className="text-base font-bold">Import Menu Dishes via CSV</h2>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Target menu: <strong>{activeMenu?.name || "Selected Menu"}</strong> · max 2 MB, 2,000 rows
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCsvOpen(false)}
+                aria-label="Close CSV import"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-1.5"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {csvError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-medium text-red-800"
+              >
+                {csvError}
+              </div>
+            )}
+
+            <div className="mt-4 space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => void downloadCsvTemplate()}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 font-semibold"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Download CSV Template
+                </button>
+                <label className="flex items-center gap-2 font-medium">
+                  Import Mode:
+                  <select
+                    aria-label="CSV import mode"
+                    value={csvMode}
+                    onChange={(e) => {
+                      setCsvMode(e.target.value as "create_only" | "upsert_by_sku");
+                      setCsvPreview(null);
+                    }}
+                    className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                  >
+                    <option value="upsert_by_sku">Upsert by SKU (create & update)</option>
+                    <option value="create_only">Create New Dishes Only</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="flex flex-col gap-1 font-medium">
+                Select CSV File (UTF-8, round-trips cleanly with Export CSV)
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(e) => {
+                    setCsvFile(e.target.files?.[0] || null);
+                    setCsvPreview(null);
+                    setCsvError(null);
+                  }}
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent p-2 text-xs"
+                />
+              </label>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={!csvFile || csvBusy}
+                  onClick={() => void previewCsvImport()}
+                  className="min-h-[44px] rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {csvBusy ? "Validating..." : "Validate & Preview Rows"}
+                </button>
+              </div>
+
+              {csvPreview && (
+                <div className="space-y-3 rounded-xl border border-[var(--border-subtle)] p-3">
+                  <div className="flex flex-wrap gap-3 font-semibold">
+                    <span>Total: {csvPreview.total_rows}</span>
+                    <span className="text-emerald-700 dark:text-emerald-300">
+                      Valid: {csvPreview.valid_rows} (Create {csvPreview.will_create} · Update{" "}
+                      {csvPreview.will_update})
+                    </span>
+                    <span
+                      className={
+                        csvPreview.invalid_rows > 0
+                          ? "text-red-700 dark:text-red-300"
+                          : "text-[var(--text-secondary)]"
+                      }
+                    >
+                      Invalid: {csvPreview.invalid_rows}
+                    </span>
+                  </div>
+
+                  <div className="max-h-52 overflow-auto rounded-lg border border-[var(--border-subtle)]">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-black/5">
+                        <tr>
+                          <th className="px-2 py-1.5">Row</th>
+                          <th className="px-2 py-1.5">SKU</th>
+                          <th className="px-2 py-1.5">Category / Dish</th>
+                          <th className="px-2 py-1.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border-subtle)]">
+                        {csvPreview.rows.slice(0, 100).map((r) => (
+                          <tr key={r.row_number}>
+                            <td className="px-2 py-1.5 font-mono">{r.row_number}</td>
+                            <td className="px-2 py-1.5 font-mono">{r.sku || "—"}</td>
+                            <td className="px-2 py-1.5">
+                              {r.category_name} · {r.name}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              {r.errors.length > 0 ? (
+                                <span className="font-semibold text-red-700 dark:text-red-300">
+                                  {r.errors.join("; ")}
+                                </span>
+                              ) : (
+                                <span className="font-semibold uppercase text-emerald-700 dark:text-emerald-300">
+                                  {r.action}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <label className="flex items-center gap-2 font-medium">
+                      Commit Strategy:
+                      <select
+                        aria-label="CSV commit strategy"
+                        value={csvStrategy}
+                        onChange={(e) =>
+                          setCsvStrategy(e.target.value as "all_or_nothing" | "skip_invalid")
+                        }
+                        className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs"
+                      >
+                        <option value="all_or_nothing">All-or-nothing (reject if any error)</option>
+                        <option value="skip_invalid">Import valid rows & skip invalid</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={
+                        csvBusy ||
+                        csvPreview.valid_rows === 0 ||
+                        (csvStrategy === "all_or_nothing" && csvPreview.invalid_rows > 0)
+                      }
+                      onClick={() => void commitCsvImport()}
+                      className="min-h-[44px] rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {csvBusy ? "Importing..." : `Commit Import (${csvPreview.valid_rows} rows)`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </AppShell>

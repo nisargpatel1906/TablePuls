@@ -147,6 +147,7 @@ export interface AdminTableItem {
   current_guest_count: number;
   version: number;
   created_at: string;
+  deleted_at?: string | null;
   qr_token: string | null;
   qr_url: string | null;
   qr_status: string | null;
@@ -181,6 +182,7 @@ export interface MenuDTO {
   venue_id: string;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED" | string;
   is_active: boolean;
   is_default: boolean;
@@ -196,6 +198,7 @@ export interface MenuCategoryDTO {
   menu_id: string;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   is_active: boolean;
   sort_order: number;
   item_count: number;
@@ -211,8 +214,10 @@ export interface MenuItemDTO {
   id: string;
   venue_id: string;
   category_id: string;
+  sku?: string | null;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   price_minor_units: number;
   compare_at_price_minor_units: number | null;
   image_asset_id: string | null;
@@ -253,6 +258,7 @@ export interface PublicMenuItemDTO {
   id: string;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   price_minor_units: number;
   compare_at_price_minor_units: number | null;
   image_url: string | null;
@@ -271,6 +277,7 @@ export interface PublicMenuCategoryDTO {
   id: string;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   items: PublicMenuItemDTO[];
 }
 
@@ -278,6 +285,7 @@ export interface PublicMenuSectionDTO {
   id: string;
   name: string;
   description: string | null;
+  translations_json?: Record<string, { name?: string; description?: string }>;
   categories: PublicMenuCategoryDTO[];
 }
 

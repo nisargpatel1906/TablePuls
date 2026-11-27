@@ -226,7 +226,7 @@ export function AppShell({
               id="venue-switcher"
               value={activeVenueId}
               onChange={(e) => router.push(`/venues/${e.target.value}/floor`)}
-              className="w-full min-h-[36px] rounded-[12px] bg-[var(--tp-inset-field)] px-2.5 text-xs font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
+              className="w-full min-h-[44px] rounded-[12px] bg-[var(--tp-inset-field)] px-2.5 text-xs font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
             >
               {venues.map((v) => (
                 <option key={v.id} value={v.id}>

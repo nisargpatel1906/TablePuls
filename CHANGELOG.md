@@ -3,6 +3,14 @@
 All notable changes to TablePulse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-rc.2] - 2026-11-27
+
+### Added
+- **TOTP Two-Factor Authentication (`FR-002`):** Enrollment QR SVG + Base32 secret (`/api/v1/auth/2fa/enroll`), verification + 8 Argon2id single-use recovery codes (`/verify-enroll`), step-up login challenge (`2FA_CHALLENGE` token + `/2fa/verify`), recovery-code regeneration, re-auth disable blocked by policy, and `/account/security` UI + forced enrollment wizard on login.
+- **Organization Role & Security Policy Flags:** `require_2fa_roles`, `managers_can_manage_tables`, `managers_can_manage_menu`, `admins_can_manage_tables`, `admins_can_manage_menu` in `system_settings` (`0004_gaps_2fa_sku_policies_i18n.py`), `/api/v1/org/system` UI toggles, and `require_venue_role` enforcement (`403 POLICY_DISABLED`).
+- **Menu CSV Import & Round-Trip Export (`FR-031`):** Template download, validated preview (`<=2 MB`, `<=2000` rows, `create_only` & `upsert_by_sku` modes, formula-safe handling), transactional commit (`all_or_nothing` / `skip_invalid`, `410 IMPORT_EXPIRED`), unique per-venue `sku`, and Menu Studio import modal.
+- **Phase 2 Should-Items & Hardening:** Duplicate table/menu, Archived tables filter + Restore (`E-05` `new_table_code` prompt) + Purge (`E-07` `409 TABLE_HAS_HISTORY`), bulk menu-item move/delete, `unavailable_until` timed Quick-86 presets + read-time auto-restore, EN/HI `translations_json` across menus/categories/items/public catalog, large-menu progressive loading (`X-Total-Items`/`X-Has-More`/`X-Next-Offset`), `A6_1UP` & `A4_STICKER_12UP` QR PDFs, batch ZIP export, aggregate 30d QR scan stats, `tablepulse admin create-org` CLI, Mailpit dev/QA profile + invite email delivery, and `wcag22aa` `>=44px` touch targets.
+
 ## [1.1.0-rc.1] - 2026-11-27
 
 ### Added

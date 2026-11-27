@@ -8,18 +8,20 @@ import {
   AlertTriangle,
   Camera,
   Check,
+  Copy,
   Edit3,
   Layers,
   Lock,
   Plus,
   QrCode,
   RefreshCw,
+  RotateCcw,
   Search,
   Trash2,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, getAccessToken } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { hasCapability } from "@/lib/rbac";
 import { previewBulkCodes } from "@/lib/table-codes";
@@ -69,9 +71,11 @@ const DEFAULT_FORM: TableFormState = {
 export default function TablesAdminPage() {
   const params = useParams<{ venueId: string }>();
   const venueId = params?.venueId || "";
-  const { user, loading: authLoading, locale } = useAuth();
+  const { user, policies, loading: authLoading, locale } = useAuth();
   const canRead = hasCapability(user?.role, "tables.read");
-  const canManage = hasCapability(user?.role, "tables.manage");
+  const canManage =
+    hasCapability(user?.role, "tables.manage") &&
+    (user?.role !== "MANAGER" || policies.managers_can_manage_tables);
 
   const [items, setItems] = useState<AdminTableItem[]>([]);
   const [summary, setSummary] = useState<TablesSummary | null>(null);
@@ -81,7 +85,7 @@ export default function TablesAdminPage() {
 
   const [search, setSearch] = useState("");
   const [sectionFilter, setSectionFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "archived">("all");
   const [mappedFilter, setMappedFilter] = useState<"all" | "mapped" | "unmapped">("all");
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -108,6 +112,11 @@ export default function TablesAdminPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminTableItem | null>(null);
   const [deleteInUseConflict, setDeleteInUseConflict] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
+
+  // Restore conflict dialog (E-05 new_table_code)
+  const [restoreTarget, setRestoreTarget] = useState<AdminTableItem | null>(null);
+  const [restoreNewCode, setRestoreNewCode] = useState("");
+  const [restoreConflictMsg, setRestoreConflictMsg] = useState<string | null>(null);
 
   const loadTables = useCallback(async () => {
     if (!venueId || !canRead) {
@@ -320,6 +329,113 @@ export default function TablesAdminPage() {
     }
   }
 
+  async function handleDuplicateTable(tbl: AdminTableItem) {
+    if (!venueId) return;
+    setSubmitting(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const created = await apiFetch<AdminTableItem>(
+        `/api/v1/venues/${venueId}/tables/${tbl.id}/duplicate`,
+        { method: "POST" },
+      );
+      setSuccessMsg(`Duplicated table ${tbl.table_code} → ${created.table_code}.`);
+      await loadTables();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to duplicate table");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitRestore(tbl: AdminTableItem, newCode?: string) {
+    if (!venueId) return;
+    setSubmitting(true);
+    setError(null);
+    setRestoreConflictMsg(null);
+    try {
+      const restored = await apiFetch<AdminTableItem>(
+        `/api/v1/venues/${venueId}/tables/${tbl.id}/restore`,
+        {
+          method: "POST",
+          body: JSON.stringify(newCode?.trim() ? { new_table_code: newCode.trim() } : {}),
+        },
+      );
+      setRestoreTarget(null);
+      setRestoreNewCode("");
+      setSuccessMsg(`Restored table ${restored.table_code} and minted a fresh active QR code.`);
+      await loadTables();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "DUPLICATE_TABLE_CODE") {
+        setRestoreTarget(tbl);
+        setRestoreNewCode((prev) => prev || `${tbl.table_code}R`);
+        setRestoreConflictMsg(err.message);
+      } else {
+        setError(err instanceof ApiError ? err.message : "Failed to restore archived table");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handlePurgeTable(tbl: AdminTableItem) {
+    if (!venueId) return;
+    if (
+      !window.confirm(
+        `Permanently purge archived table "${tbl.table_code}"? This cannot be undone and fails if historical telemetry exists.`,
+      )
+    ) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/venues/${venueId}/tables/${tbl.id}/purge`, {
+        method: "DELETE",
+      });
+      setSuccessMsg(`Permanently purged table ${tbl.table_code}.`);
+      await loadTables();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to purge table");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleExportSelectedQrPdf() {
+    if (!venueId || selectedIds.length === 0) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const token = getAccessToken();
+      const res = await fetch(`${base}/api/v1/venues/${venueId}/qr/export-pdf`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({ table_ids: selectedIds, layout: "A4_4UP" }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "selected-table-qr-codes.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setSuccessMsg(`Exported A4 4-up QR PDF for ${selectedIds.length} tables.`);
+    } catch {
+      setError("Failed to export QR PDF for selected tables");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -454,19 +570,22 @@ export default function TablesAdminPage() {
                 <select
                   aria-label="Filter by status"
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                  onChange={(e) =>
+                    setStatusFilter(e.target.value as "all" | "active" | "inactive" | "archived")
+                  }
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
                 >
-                  <option value="all">All Statuses</option>
+                  <option value="all">All Active/Inactive</option>
                   <option value="active">Active Only</option>
                   <option value="inactive">Inactive Only</option>
+                  <option value="archived">Archived Only</option>
                 </select>
 
                 <select
                   aria-label="Filter by camera mapping"
                   value={mappedFilter}
                   onChange={(e) => setMappedFilter(e.target.value as "all" | "mapped" | "unmapped")}
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
+                  className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium"
                 >
                   <option value="all">All Mapping Modes</option>
                   <option value="mapped">Camera-Mapped</option>
@@ -483,13 +602,13 @@ export default function TablesAdminPage() {
                     value={bulkSectionValue}
                     onChange={(e) => setBulkSectionValue(e.target.value)}
                     placeholder="Section..."
-                    className="w-28 rounded border border-[var(--border-subtle)] bg-transparent px-2 py-1 text-xs"
+                    className="min-h-[44px] w-28 rounded border border-[var(--border-subtle)] bg-transparent px-2 py-1 text-xs"
                   />
                   <button
                     type="button"
                     disabled={submitting}
                     onClick={() => void handleBulkUpdate({ section_name: bulkSectionValue.trim() || "Main" })}
-                    className="rounded bg-[var(--accent-primary)] px-2.5 py-1 text-xs font-semibold text-white"
+                    className="min-h-[44px] rounded bg-[var(--accent-primary)] px-2.5 py-1 text-xs font-semibold text-white"
                   >
                     Move Section
                   </button>
@@ -497,7 +616,7 @@ export default function TablesAdminPage() {
                     type="button"
                     disabled={submitting}
                     onClick={() => void handleBulkUpdate({ is_active: false })}
-                    className="rounded bg-amber-800 px-2.5 py-1 text-xs font-semibold text-white"
+                    className="min-h-[44px] rounded bg-amber-800 px-2.5 py-1 text-xs font-semibold text-white"
                   >
                     Deactivate
                   </button>
@@ -505,9 +624,18 @@ export default function TablesAdminPage() {
                     type="button"
                     disabled={submitting}
                     onClick={() => void handleBulkUpdate({ is_active: true })}
-                    className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white"
+                    className="min-h-[44px] rounded bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white"
                   >
                     Activate
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => void handleExportSelectedQrPdf()}
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold"
+                  >
+                    <QrCode className="h-3.5 w-3.5" aria-hidden="true" />
+                    Export QRs PDF
                   </button>
                 </div>
               )}
@@ -626,27 +754,59 @@ export default function TablesAdminPage() {
                           </td>
                           <td className="px-3 py-3 text-right">
                             {canManage && (
-                              <div className="inline-flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(tbl)}
-                                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
-                                >
-                                  <Edit3 className="h-3 w-3" aria-hidden="true" />
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setDeleteTarget(tbl);
-                                    setDeleteInUseConflict(false);
-                                    setDeleteReason("");
-                                  }}
-                                  aria-label={`Archive ${tbl.table_code}`}
-                                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-500/25 dark:text-red-300"
-                                >
-                                  <Trash2 className="h-3 w-3" aria-hidden="true" />
-                                </button>
+                              <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                {tbl.deleted_at ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void submitRestore(tbl)}
+                                      className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-emerald-600/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                    >
+                                      <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                                      Restore
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handlePurgeTable(tbl)}
+                                      className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-500/25 dark:text-red-300"
+                                    >
+                                      <Trash2 className="h-3 w-3" aria-hidden="true" />
+                                      Purge
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDuplicateTable(tbl)}
+                                      aria-label={`Duplicate ${tbl.table_code}`}
+                                      className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
+                                    >
+                                      <Copy className="h-3 w-3" aria-hidden="true" />
+                                      Duplicate
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(tbl)}
+                                      className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold hover:opacity-80"
+                                    >
+                                      <Edit3 className="h-3 w-3" aria-hidden="true" />
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDeleteTarget(tbl);
+                                        setDeleteInUseConflict(false);
+                                        setDeleteReason("");
+                                      }}
+                                      aria-label={`Archive ${tbl.table_code}`}
+                                      className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-500/25 dark:text-red-300"
+                                    >
+                                      <Trash2 className="h-3 w-3" aria-hidden="true" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </td>
@@ -690,26 +850,58 @@ export default function TablesAdminPage() {
                       </div>
                       {canManage && (
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(tbl)}
-                            className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDeleteTarget(tbl);
-                              setDeleteInUseConflict(false);
-                              setDeleteReason("");
-                            }}
-                            className="inline-flex min-h-[44px] items-center justify-center gap-1 rounded-lg bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            Archive
-                          </button>
+                          {tbl.deleted_at ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void submitRestore(tbl)}
+                                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-lg border border-emerald-600/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handlePurgeTable(tbl)}
+                                className="inline-flex min-h-[44px] items-center justify-center gap-1 rounded-lg bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Purge
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleDuplicateTable(tbl)}
+                                className="inline-flex min-h-[44px] items-center justify-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold"
+                              >
+                                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                Duplicate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(tbl)}
+                                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteTarget(tbl);
+                                  setDeleteInUseConflict(false);
+                                  setDeleteReason("");
+                                }}
+                                aria-label={`Archive ${tbl.table_code}`}
+                                className="inline-flex min-h-[44px] items-center justify-center gap-1 rounded-lg bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Archive
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </article>
@@ -1096,6 +1288,59 @@ export default function TablesAdminPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Restore Table with Code Conflict Override Modal */}
+      {restoreTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Restore ${restoreTarget.table_code}`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitRestore(restoreTarget, restoreNewCode);
+            }}
+            className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-5 shadow-2xl"
+          >
+            <h2 className="text-base font-bold">Restore Table {restoreTarget.table_code}</h2>
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {restoreConflictMsg ||
+                "Enter a unique table code to restore this archived table without colliding with an active table."}
+            </p>
+            <label className="mt-4 flex flex-col gap-1 text-xs font-medium">
+              New Table Code
+              <input
+                required
+                maxLength={24}
+                value={restoreNewCode}
+                onChange={(e) => setRestoreNewCode(e.target.value)}
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-transparent px-3 py-2 text-sm"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRestoreTarget(null);
+                  setRestoreConflictMsg(null);
+                }}
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !restoreNewCode.trim()}
+                className="min-h-[44px] rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {submitting ? "Restoring..." : "Restore with New Code"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </AppShell>
