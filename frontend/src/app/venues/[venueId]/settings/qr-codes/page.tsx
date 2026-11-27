@@ -368,7 +368,7 @@ export default function QrCodesManagerPage() {
                   ))}
                 </select>
 
-                <label className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium">
+                <label className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium md:min-h-0">
                   <input
                     type="checkbox"
                     checked={neverScanned30d}

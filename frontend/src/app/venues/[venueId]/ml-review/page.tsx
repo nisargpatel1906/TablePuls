@@ -340,7 +340,7 @@ export default function MLReviewPage() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-xs font-medium">
+                <label className="flex min-h-[44px] items-center gap-2 text-xs font-medium md:min-h-0">
                   Verified Guest Count:
                   <input
                     type="number"
@@ -351,7 +351,7 @@ export default function MLReviewPage() {
                     className="w-20 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-sm"
                   />
                 </label>
-                <label className="flex items-center gap-2 text-xs font-medium">
+                <label className="flex min-h-[44px] items-center gap-2 text-xs font-medium md:min-h-0">
                   <input
                     type="checkbox"
                     checked={excludeDataset}
