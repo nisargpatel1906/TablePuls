@@ -940,12 +940,13 @@ async def list_menu_items(
         buf = io.StringIO()
         buf.write("\ufeff")
         writer = csv.writer(buf)
-        writer.writerow(["id", "name", "price_minor_units", "is_available", "dietary_tags"])
+        writer.writerow(["id", "name", "description", "price_minor_units", "is_available", "dietary_tags"])
         for r in filtered:
             writer.writerow(
                 [
                     _csv_safe(r.id),
                     _csv_safe(r.name),
+                    _csv_safe(r.description),
                     r.price_minor_units,
                     r.is_available,
                     _csv_safe(",".join(r.dietary_tags or [])),

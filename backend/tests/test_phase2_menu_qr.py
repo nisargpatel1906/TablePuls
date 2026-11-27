@@ -256,9 +256,10 @@ async def test_media_upload_validation_dedup_and_menu_lifecycle(
     assert med_block.status_code == 409
     assert med_block.json()["error"]["code"] == "MEDIA_IN_USE"
 
-    # CSV export protects against formula injection
+    # CSV export protects against formula injection in name and description
     csv_res = await client.get(f"/api/v1/venues/{venue_id}/menu-items?format=csv", headers=hdr)
     assert csv_res.status_code == 200
+    assert "description" in csv_res.text.splitlines()[0]
     assert "'=FORMULA_TRAP Lotus Stem" in csv_res.text
 
     # Currency change lock when priced items exist -> 409 CURRENCY_LOCKED
