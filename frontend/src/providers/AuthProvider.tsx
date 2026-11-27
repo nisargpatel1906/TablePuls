@@ -33,8 +33,8 @@ interface AuthContextValue {
   toggleTheme: () => void;
   toggleSolidMode: () => void;
   toggleLocale: () => void;
-  setSession: (token: string, user: AuthUser) => Promise<void>;
-  refreshSessionData: () => Promise<void>;
+  setSession: (token: string, user: AuthUser) => Promise<VenueSummary[]>;
+  refreshSessionData: () => Promise<VenueSummary[]>;
   signOut: () => Promise<void>;
 }
 
@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [solidMode, setSolidMode] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
 
-  const refreshSessionData = useCallback(async () => {
+  const refreshSessionData = useCallback(async (): Promise<VenueSummary[]> => {
     try {
       const me = await apiFetch<{
         user: AuthUser;
@@ -74,10 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (me.policies) {
         setPolicies(me.policies);
       }
+      return me.venues;
     } catch {
       setUser(null);
       setVenues([]);
       setPolicies(DEFAULT_POLICIES);
+      return [];
     }
   }, []);
 
@@ -138,13 +140,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [theme, solidMode]);
 
   const setSession = useCallback(
-    async (token: string, nextUser: AuthUser) => {
+    async (token: string, nextUser: AuthUser): Promise<VenueSummary[]> => {
       setAccessToken(token);
       setBootstrapRequired(false);
-      await refreshSessionData();
-      setUser((prev) => prev ?? nextUser);
+      const me = await apiFetch<{
+        user: AuthUser;
+        venues: VenueSummary[];
+        policies?: OrgPolicies;
+      }>("/api/v1/auth/me");
+      setUser(me.user ?? nextUser);
+      setVenues(me.venues);
+      if (me.policies) {
+        setPolicies(me.policies);
+      }
+      return me.venues;
     },
-    [refreshSessionData],
+    [],
   );
 
   const signOut = useCallback(async () => {

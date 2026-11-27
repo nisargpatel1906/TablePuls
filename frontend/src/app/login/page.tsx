@@ -41,12 +41,13 @@ function LoginFormInner() {
   const errorBannerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (submitting) return;
     if (!loading && bootstrapRequired) {
       router.replace("/register?bootstrap=true");
     } else if (!loading && user) {
       router.replace(defaultHomeForRole(user.role, venues[0]?.id));
     }
-  }, [loading, bootstrapRequired, user, venues, router]);
+  }, [loading, submitting, bootstrapRequired, user, venues, router]);
 
   useEffect(() => {
     if (retryCountdown <= 0) return;
@@ -112,9 +113,8 @@ function LoginFormInner() {
       }
 
       if (res.access_token && res.user) {
-        await setSession(res.access_token, res.user);
-        const me = await apiFetch<{ venues: Array<{ id: string }> }>("/api/v1/auth/me");
-        router.push(defaultHomeForRole(res.user.role, me.venues[0]?.id));
+        const loadedVenues = await setSession(res.access_token, res.user);
+        router.push(defaultHomeForRole(res.user.role, loadedVenues[0]?.id));
       }
     } catch (err) {
       if (err instanceof ApiError) {
