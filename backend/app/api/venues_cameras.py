@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import os
 import secrets
 import time
 import uuid
@@ -439,9 +440,11 @@ def _read_camera_frame_sync(
                 return True, read_frame
         return True, generate_demo_floor_frame(1280, 720)
 
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
     cap = cv2.VideoCapture(raw_url)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     ok = False
     frame: Any = None
     if cap.isOpened():
@@ -900,9 +903,11 @@ def _open_capture_sync(stream_type: str, raw_url: str, demo_path: str) -> cv2.Vi
         if Path(demo_path).exists():
             return cv2.VideoCapture(demo_path)
         return None
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
     cap = cv2.VideoCapture(raw_url)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 

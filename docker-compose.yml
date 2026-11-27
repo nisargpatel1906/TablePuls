@@ -65,6 +65,7 @@ services:
       MENU_IMAGES_ENABLED: ${MENU_IMAGES_ENABLED:-true}
       DEMO_MODE: ${DEMO_MODE:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: ${OPENCV_FFMPEG_CAPTURE_OPTIONS:-rtsp_transport;tcp}
     volumes:
       - snapshots_data:/app/data/snapshots
       - models_data:/app/data/models
@@ -107,6 +108,7 @@ services:
       DEMO_MODE: ${DEMO_MODE:-true}
       AI_INFERENCE_ENABLED: ${AI_INFERENCE_ENABLED:-true}
       REVIEW_CROPS_ENABLED: ${REVIEW_CROPS_ENABLED:-true}
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: ${OPENCV_FFMPEG_CAPTURE_OPTIONS:-rtsp_transport;tcp}
     volumes:
       - snapshots_data:/app/data/snapshots
       - models_data:/app/data/models

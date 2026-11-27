@@ -411,3 +411,34 @@ def test_websocket_floor_snapshot(clean_db: None) -> None:
             ws.send_text("ping")
             assert ws.receive_text() == "pong"
     reset_engine_cache()
+
+
+@pytest.mark.asyncio
+async def test_flag_table_detection_timeout_fallback(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Flagging an AI detection must return 201 promptly even if live RTSP capture stalls."""
+    import time
+
+    from app.api import floor_ops
+    from app.config import get_settings
+
+    token, _org_id, venue_id, _cam_id, t1_id = await _bootstrap_venue_camera_table(
+        client, monkeypatch
+    )
+    monkeypatch.setenv("REVIEW_CROPS_ENABLED", "true")
+    get_settings.cache_clear()
+
+    def _slow_capture(*_args: object) -> tuple[bool, None]:
+        time.sleep(6.0)
+        return False, None
+
+    monkeypatch.setattr(floor_ops, "_read_camera_frame_sync", _slow_capture)
+    res = await client.post(
+        f"/api/v1/venues/{venue_id}/tables/{t1_id}/flag",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"reason": "Stalled stream flag check", "suggested_state": "FREE"},
+    )
+    assert res.status_code == 201
+    assert res.json()["data"]["status"] == "PENDING"
+    get_settings.cache_clear()

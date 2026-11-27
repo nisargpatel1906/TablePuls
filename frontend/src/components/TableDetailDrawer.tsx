@@ -41,6 +41,7 @@ export function TableDetailDrawer({
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
 
   const [overrideState, setOverrideState] = useState<TableState>("FREE");
   const [guestCount, setGuestCount] = useState<number>(0);
@@ -144,7 +145,7 @@ export function TableDetailDrawer({
   async function submitFlag(e: React.FormEvent) {
     e.preventDefault();
     if (!detail) return;
-    setSubmitting(true);
+    setFlagSubmitting(true);
     setActionError(null);
     setActionSuccess(null);
     try {
@@ -162,7 +163,7 @@ export function TableDetailDrawer({
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Failed to submit flag");
     } finally {
-      setSubmitting(false);
+      setFlagSubmitting(false);
     }
   }
 
@@ -307,15 +308,15 @@ export function TableDetailDrawer({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || flagSubmitting}
                 onClick={() => void applyOverride("FREE", 0, "Marked clean / ready for seating")}
-                className="min-h-[40px] flex-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                className="min-h-[44px] flex-1 whitespace-nowrap rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
               >
                 Mark Clean (Free)
               </button>
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || flagSubmitting}
                 onClick={() =>
                   void applyOverride(
                     "OCCUPIED",
@@ -324,14 +325,14 @@ export function TableDetailDrawer({
                     true,
                   )
                 }
-                className="min-h-[40px] flex-1 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+                className="min-h-[44px] flex-1 whitespace-nowrap rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
               >
                 Mark Service Attended
               </button>
               {canFullOverride && (
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || flagSubmitting}
                   onClick={() =>
                     void applyOverride(
                       detail.table.current_state === "RESERVED" ? "FREE" : "RESERVED",
@@ -341,7 +342,7 @@ export function TableDetailDrawer({
                         : "Held as Reserved",
                     )
                   }
-                  className="min-h-[40px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-50"
+                  className="min-h-[44px] whitespace-nowrap rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-50"
                 >
                   {detail.table.current_state === "RESERVED" ? "Unreserve" : "Mark Reserved"}
                 </button>
@@ -449,10 +450,10 @@ export function TableDetailDrawer({
                   </label>
                   <button
                     type="submit"
-                    disabled={submitting}
-                    className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+                    disabled={flagSubmitting}
+                    className="min-h-[44px] rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
                   >
-                    Submit to ML Review Queue
+                    {flagSubmitting ? "Submitting..." : "Submit to ML Review Queue"}
                   </button>
                 </form>
               )}

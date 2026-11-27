@@ -493,11 +493,14 @@ async def flag_table_detection(
     if settings.review_crops_enabled and cam_obj is not None:
         try:
             raw_url = decrypt_field(cam_obj.stream_url_encrypted)
-            ok, frame = await asyncio.to_thread(
-                _read_camera_frame_sync,
-                cam_obj.stream_type,
-                raw_url,
-                settings.demo_video_path,
+            ok, frame = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _read_camera_frame_sync,
+                    cam_obj.stream_type,
+                    raw_url,
+                    settings.demo_video_path,
+                ),
+                timeout=4.0,
             )
             if ok and frame is not None:
                 blurred_jpeg = await asyncio.to_thread(
