@@ -73,3 +73,19 @@
     animation: none;
   }
 }
+
+@media (max-width: 768px) {
+  button,
+  a[href],
+  [role="button"],
+  [role="tab"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+}

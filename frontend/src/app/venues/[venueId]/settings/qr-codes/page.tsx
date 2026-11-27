@@ -466,18 +466,20 @@ export default function QrCodesManagerPage() {
                                   {item.table_label} · {item.section_name}
                                 </p>
                               </div>
-                              <input
-                                type="checkbox"
-                                aria-label={`Include ${item.table_code} in batch PDF`}
-                                checked={isChecked}
-                                onChange={() =>
-                                  setSelectedIds((prev) =>
-                                    isChecked
-                                      ? prev.filter((x) => x !== item.table_id)
-                                      : [...prev, item.table_id],
-                                  )
-                                }
-                              />
+                              <label className="inline-flex min-h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center md:min-h-0 md:min-w-0">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Include ${item.table_code} in batch PDF`}
+                                  checked={isChecked}
+                                  onChange={() =>
+                                    setSelectedIds((prev) =>
+                                      isChecked
+                                        ? prev.filter((x) => x !== item.table_id)
+                                        : [...prev, item.table_id],
+                                    )
+                                  }
+                                />
+                              </label>
                             </div>
 
                             <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-[var(--text-secondary)]">

@@ -243,4 +243,13 @@ describe("Stage 6 TablePulse UI Foundation", () => {
     expect(calledUrls.some((u) => u.includes("/api/v1/venues/v1/tables/t1"))).toBe(false);
     vi.unstubAllGlobals();
   });
+
+  it("enforces >=44px mobile touch targets in globals.css (TC-UI-01 regression)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const css = readFileSync(resolve(process.cwd(), "src/styles/globals.css"), "utf8");
+    expect(css).toContain("@media (max-width: 768px)");
+    expect(css).toContain("min-height: 44px");
+    expect(css).toContain("min-width: 44px");
+  });
 });

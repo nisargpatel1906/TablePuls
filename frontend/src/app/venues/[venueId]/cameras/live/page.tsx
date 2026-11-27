@@ -229,7 +229,7 @@ export default function LiveCameraWallPage() {
           </div>
           {canViewCameras && (
             <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium">
+              <label className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium md:min-h-0">
                 <input
                   type="checkbox"
                   checked={showPolygons}
@@ -237,7 +237,7 @@ export default function LiveCameraWallPage() {
                 />
                 Show Table Polygons
               </label>
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium">
+              <label className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1.5 text-xs font-medium md:min-h-0">
                 <input
                   type="checkbox"
                   checked={showTimers}
@@ -245,7 +245,7 @@ export default function LiveCameraWallPage() {
                 />
                 Show Dwell Timers
               </label>
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold">
+              <label className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-1 text-xs font-semibold md:min-h-0">
                 <span>Display FPS</span>
                 <select
                   aria-label="Live display FPS"

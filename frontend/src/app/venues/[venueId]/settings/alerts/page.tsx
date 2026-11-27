@@ -267,7 +267,7 @@ export default function AlertRulesSettingsPage() {
                   />
                 </div>
 
-                <label className="flex items-center gap-2 text-xs font-medium">
+                <label className="flex min-h-[44px] items-center gap-2 text-xs font-medium md:min-h-0">
                   <input
                     type="checkbox"
                     checked={rule.require_bussing_confirmation}
@@ -320,7 +320,7 @@ export default function AlertRulesSettingsPage() {
 
             {tab === "quiet" && (
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-sm font-medium">
+                <label className="flex min-h-[44px] items-center gap-2 text-sm font-medium md:min-h-0">
                   <input
                     type="checkbox"
                     checked={rule.quiet_hours_enabled}

@@ -99,7 +99,7 @@ function SortableCategoryRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 text-xs transition ${
+      className={`flex flex-wrap items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 text-xs transition ${
         selected
           ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/12 font-semibold"
           : "border-[var(--border-subtle)] bg-[var(--surface-solid)]"
@@ -112,7 +112,7 @@ function SortableCategoryRow({
             {...attributes}
             {...listeners}
             aria-label={`Drag ${cat.name}`}
-            className="cursor-grab p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className="inline-flex min-h-[44px] min-w-[44px] cursor-grab items-center justify-center p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] md:min-h-0 md:min-w-0"
           >
             <GripVertical className="h-3.5 w-3.5" />
           </button>
@@ -120,7 +120,7 @@ function SortableCategoryRow({
         <button
           type="button"
           onClick={onSelect}
-          className="min-w-0 flex-1 truncate text-left"
+          className="min-h-[44px] min-w-0 flex-1 truncate text-left md:min-h-0"
         >
           <span>{cat.name}</span>
           <span className="ml-1.5 text-[11px] text-[var(--text-secondary)]">
@@ -129,7 +129,7 @@ function SortableCategoryRow({
         </button>
       </div>
       {canManage && (
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center gap-0.5">
           <button
             type="button"
             disabled={isFirst}
@@ -942,19 +942,20 @@ export default function MenuStudioPage() {
                           }`}
                         >
                           {canQuick86 && (
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${item.name}`}
-                              checked={selectedItemIds.includes(item.id)}
-                              onChange={() =>
-                                setSelectedItemIds((prev) =>
-                                  prev.includes(item.id)
-                                    ? prev.filter((x) => x !== item.id)
-                                    : [...prev, item.id],
-                                )
-                              }
-                              className="mt-1"
-                            />
+                            <label className="inline-flex min-h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center md:min-h-0 md:min-w-0">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${item.name}`}
+                                checked={selectedItemIds.includes(item.id)}
+                                onChange={() =>
+                                  setSelectedItemIds((prev) =>
+                                    prev.includes(item.id)
+                                      ? prev.filter((x) => x !== item.id)
+                                      : [...prev, item.id],
+                                  )
+                                }
+                              />
+                            </label>
                           )}
 
                           {item.thumb_url ? (
