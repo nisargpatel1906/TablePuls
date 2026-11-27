@@ -255,7 +255,7 @@ export function PublicDigitalMenu({
               type="button"
               onClick={() => setLocale((l) => (l === "en" ? "hi" : "en"))}
               aria-label="Toggle language"
-              className="inline-flex min-h-[40px] items-center gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 py-1.5 text-xs font-semibold"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-3 py-2 text-xs font-semibold"
             >
               <Languages className="h-3.5 w-3.5" aria-hidden="true" />
               {locale.toUpperCase()}
@@ -264,7 +264,7 @@ export function PublicDigitalMenu({
               type="button"
               onClick={() => setTheme((th) => (th === "light" ? "dark" : "light"))}
               aria-label="Toggle theme"
-              className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)]"
             >
               {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
@@ -376,7 +376,7 @@ export function PublicDigitalMenu({
                       type="button"
                       aria-pressed={active}
                       onClick={() => setDietFilter((prev) => (prev === chip.key ? null : chip.key))}
-                      className={`min-h-[38px] shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      className={`min-h-[44px] shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition ${
                         active
                           ? "bg-[var(--accent-primary)] text-white"
                           : "border border-[var(--border-subtle)] bg-[var(--surface-solid)] text-[var(--text-secondary)]"
@@ -389,12 +389,12 @@ export function PublicDigitalMenu({
               </div>
 
               {filteredCategories.length > 1 && (
-                <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pt-0.5">
+                <nav aria-label="Menu categories" className="flex gap-1.5 overflow-x-auto pt-0.5">
                   {filteredCategories.map((cat) => (
                     <a
                       key={cat.id}
                       href={`#cat-${cat.id}`}
-                      className="shrink-0 text-xs font-bold text-[var(--accent-primary)] hover:underline"
+                      className="inline-flex min-h-[44px] shrink-0 items-center px-2 text-xs font-bold text-[var(--accent-primary)] hover:underline"
                     >
                       {cat.name}
                     </a>

@@ -101,6 +101,11 @@ describe("SCR-022 Public Digital Menu Isolation & Behavior", () => {
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("omit");
 
+    // Mobile touch-target guarantees (>= 44px classes on header controls & dietary chips)
+    expect(screen.getByRole("button", { name: "Toggle theme" }).className).toContain("h-11");
+    expect(screen.getByRole("button", { name: "Toggle language" }).className).toContain("min-h-[44px]");
+    expect(screen.getByRole("button", { name: "Veg" }).className).toContain("min-h-[44px]");
+
     // Filter by Veg chip hides Lamb Chops
     fireEvent.click(screen.getByRole("button", { name: "Veg" }));
     expect(screen.getByText("Paneer Tikka")).toBeTruthy();
