@@ -240,12 +240,14 @@ export default function UsersAndAuditPage() {
             onSubmit={handleInvite}
             className="tp-glass grid grid-cols-1 gap-3 rounded-xl border p-4 md:grid-cols-4"
           >
-            <label className="flex flex-col gap-1 text-xs font-medium">
+            <label htmlFor="inv-venue" className="flex flex-col gap-1 text-xs font-medium">
               Venue Scope
               <select
+                id="inv-venue"
+                aria-label="Venue Scope"
                 value={invVenueId}
                 onChange={(e) => setInvVenueId(e.target.value)}
-                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
               >
                 {venues.map((v) => (
                   <option key={v.id} value={v.id}>
@@ -254,22 +256,25 @@ export default function UsersAndAuditPage() {
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
+            <label htmlFor="inv-email" className="flex flex-col gap-1 text-xs font-medium">
               Email *
               <input
+                id="inv-email"
                 type="email"
                 required
                 value={invEmail}
                 onChange={(e) => setInvEmail(e.target.value)}
-                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
+            <label htmlFor="inv-role" className="flex flex-col gap-1 text-xs font-medium">
               Role
               <select
+                id="inv-role"
+                aria-label="Role"
                 value={invRole}
                 onChange={(e) => setInvRole(e.target.value as Role)}
-                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
+                className="min-h-[44px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] px-2.5 py-2 text-sm"
               >
                 {canPrivileged && <option value="OWNER">OWNER</option>}
                 {canPrivileged && <option value="MANAGER">MANAGER</option>}
@@ -282,7 +287,7 @@ export default function UsersAndAuditPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-h-[40px] w-full rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
+                className="min-h-[44px] w-full rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-xs font-semibold text-white"
               >
                 {submitting ? "Creating..." : "Create Invite Link"}
               </button>

@@ -226,7 +226,7 @@ export function AppShell({
               id="venue-switcher"
               value={activeVenueId}
               onChange={(e) => router.push(`/venues/${e.target.value}/floor`)}
-              className="w-full min-h-[44px] rounded-[12px] bg-[var(--tp-inset-field)] px-2.5 text-xs font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
+              className="w-full min-h-[44px] lg:min-h-[36px] rounded-[12px] bg-[var(--tp-inset-field)] px-2.5 text-xs font-medium text-[var(--tp-label-primary)] border border-[var(--tp-card-border)]"
             >
               {venues.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -237,7 +237,7 @@ export function AppShell({
           </div>
         )}
 
-        <nav className="mt-2 flex-1 space-y-0.5 overflow-y-auto">
+        <nav className="mt-1.5 flex-1 space-y-0.5 overflow-y-auto">
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -245,7 +245,7 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between min-h-[44px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
+                className={`flex items-center justify-between min-h-[34px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
                   active
                     ? "bg-[var(--tp-accent)] text-white"
                     : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
@@ -276,7 +276,7 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2 min-h-[44px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
+                    className={`flex items-center gap-2 min-h-[34px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
                       active
                         ? "bg-[var(--tp-accent)] text-white"
                         : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
@@ -294,7 +294,7 @@ export function AppShell({
         <div className="mt-1 border-t border-[var(--tp-separator)] pt-1 space-y-0.5">
           <Link
             href="/account/security"
-            className={`flex items-center gap-2 min-h-[44px] px-2.5 rounded-xl text-[12.5px] font-medium transition ${
+            className={`flex items-center gap-2 min-h-[34px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium transition ${
               pathname === "/account/security"
                 ? "bg-[var(--tp-accent)] text-white"
                 : "text-[var(--tp-label-primary)] hover:bg-[var(--tp-inset-field)]"
@@ -306,7 +306,7 @@ export function AppShell({
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex w-full items-center gap-2 min-h-[44px] px-2.5 rounded-xl text-[12.5px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
+            className="flex w-full items-center gap-2 min-h-[34px] px-2.5 py-1 rounded-xl text-[12.5px] font-medium text-[var(--tp-label-secondary)] hover:bg-[var(--tp-inset-field)] hover:text-[var(--tp-label-primary)]"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             {t(locale, "action.sign_out")}
