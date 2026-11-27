@@ -110,12 +110,19 @@ def _user_dict(user: User) -> dict[str, object]:
 
 
 @router.get("/bootstrap-status")
-async def bootstrap_status(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
-    """Public check returning whether initial OWNER bootstrap is required."""
+async def bootstrap_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tp_refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)] = None,
+) -> JSONResponse:
+    """Public check returning whether initial OWNER bootstrap is required and session presence."""
     settings = get_settings()
     count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
     return success_response(
-        {"bootstrap_required": int(count) == 0, "demo_mode": settings.demo_mode}
+        {
+            "bootstrap_required": int(count) == 0,
+            "demo_mode": settings.demo_mode,
+            "has_session": bool(tp_refresh_token),
+        }
     )
 
 

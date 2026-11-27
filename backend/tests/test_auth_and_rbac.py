@@ -409,3 +409,19 @@ async def test_demo_login_gate_and_seed(
 
     monkeypatch.setenv("DEMO_MODE", "false")
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_status_reports_has_session_only_with_cookie(
+    client: AsyncClient,
+) -> None:
+    unauth = await client.get("/api/v1/auth/bootstrap-status")
+    assert unauth.status_code == 200
+    assert unauth.json()["data"]["has_session"] is False
+
+    token, _ = await _bootstrap(client)
+    assert token
+    authed = await client.get("/api/v1/auth/bootstrap-status")
+    assert authed.status_code == 200
+    assert authed.json()["data"]["has_session"] is True
+    assert authed.json()["data"]["bootstrap_required"] is False

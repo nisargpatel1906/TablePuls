@@ -7,7 +7,47 @@ import { hasCapability, defaultHomeForRole } from "@/lib/rbac";
 import { apiFetch, ApiError, setAccessToken } from "@/lib/api";
 import { useVenueRealtime } from "@/hooks/useVenueRealtime";
 
+import { AuthProvider, useAuth } from "@/providers/AuthProvider";
+
 describe("Stage 6 TablePulse UI Foundation", () => {
+  it("skips /auth/refresh on mount when bootstrap-status reports has_session=false", async () => {
+    const calledUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        calledUrls.push(url);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              data: { bootstrap_required: true, demo_mode: false, has_session: false },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }),
+    );
+
+    function BootObserver() {
+      const { loading, bootstrapRequired } = useAuth();
+      return (
+        <span data-testid="boot-state">
+          {loading ? "loading" : String(bootstrapRequired)}
+        </span>
+      );
+    }
+
+    render(
+      <AuthProvider>
+        <BootObserver />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("boot-state").textContent).toBe("true"));
+    expect(calledUrls.some((u) => u.includes("/api/v1/auth/refresh"))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it("renders colorblind-safe badges with distinct icons and borders for all 6 canonical states", () => {
     const states: TableState[] = [
       "FREE",

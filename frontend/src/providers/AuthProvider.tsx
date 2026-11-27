@@ -67,22 +67,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     (async () => {
+      let hasSession = false;
       try {
         const status = await apiFetch<{
           bootstrap_required: boolean;
           demo_mode: boolean;
+          has_session?: boolean;
         }>("/api/v1/auth/bootstrap-status", { skipAuth: true, retryOn401: false });
         if (active) {
           setBootstrapRequired(status.bootstrap_required);
           setDemoMode(status.demo_mode);
+          hasSession = Boolean(status.has_session);
         }
       } catch {
         // Ignore startup check error; login page handles degraded API
       }
 
-      const token = await refreshAccessToken();
-      if (token && active) {
-        await refreshSessionData();
+      if (hasSession) {
+        const token = await refreshAccessToken();
+        if (token && active) {
+          await refreshSessionData();
+        }
       }
       if (active) {
         setLoading(false);

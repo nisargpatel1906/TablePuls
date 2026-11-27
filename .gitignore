@@ -46,6 +46,10 @@ mlruns/
 # Test & IDE artifacts
 playwright-report/
 test-results/
+qa-evidence/run-*/
+qa-evidence/footage/
+qa-evidence/media/
+*.webm
 .cursor/
 .vscode/
 .idea/
