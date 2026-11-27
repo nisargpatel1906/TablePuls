@@ -97,6 +97,7 @@ def create_access_token(
         "token_type": "access",
         "jti": jti or str(uuid.uuid4()),
         "iat": int(now.timestamp()),
+        "iat_ms": int(now.timestamp() * 1000),
         "exp": int(exp.timestamp()),
     }
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")

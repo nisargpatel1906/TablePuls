@@ -90,7 +90,7 @@ async def get_current_user(
     except (KeyError, ValueError) as exc:
         raise AppError(401, "AUTH_UNAUTHORIZED", "Malformed token claims") from exc
 
-    if await is_user_revoked(str(user_id), int(payload.get("iat", 0))):
+    if await is_user_revoked(str(user_id), int(payload.get("iat_ms") or int(payload.get("iat", 0)) * 1000)):
         raise AppError(401, "AUTH_UNAUTHORIZED", "Session has been revoked")
 
     res = await db.execute(select(User).where(User.id == user_id, User.organization_id == org_id))

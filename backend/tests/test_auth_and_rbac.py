@@ -430,3 +430,26 @@ async def test_bootstrap_status_reports_has_session_only_with_cookie(
     assert authed.status_code == 200
     assert authed.json()["data"]["has_session"] is True
     assert authed.json()["data"]["bootstrap_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_same_second_logout_and_relogin_keeps_new_session_valid(
+    client: AsyncClient,
+) -> None:
+    token1, _ = await _bootstrap(client)
+    out = await client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token1}"})
+    assert out.status_code == 200
+
+    # Old token issued before logout must be revoked
+    old_me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token1}"})
+    assert old_me.status_code == 401
+
+    # Immediate re-login within the same integer second must issue a valid token
+    relogin = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "VeryStrongPassword123!"},
+    )
+    assert relogin.status_code == 200
+    token2 = relogin.json()["data"]["access_token"]
+    new_me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token2}"})
+    assert new_me.status_code == 200

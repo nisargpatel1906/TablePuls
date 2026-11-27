@@ -221,7 +221,10 @@ async def _resolve_user_or_setup_challenge(
                 org_id = uuid.UUID(str(payload["org_id"]))
             except (KeyError, ValueError) as exc:
                 raise AppError(401, "AUTH_UNAUTHORIZED", "Malformed token claims") from exc
-            if await is_user_revoked(str(user_id), int(payload.get("iat", 0))):
+            if await is_user_revoked(
+                str(user_id),
+                int(payload.get("iat_ms") or int(payload.get("iat", 0)) * 1000),
+            ):
                 raise AppError(401, "AUTH_UNAUTHORIZED", "Session has been revoked")
             user = (
                 await db.execute(
@@ -1073,7 +1076,7 @@ async def logout(
             .where(RefreshToken.token_hash == hash_token(tp_refresh_token))
             .values(revoked_at=datetime.now(UTC))
         )
-    await mark_user_revoked(str(user.id), int(datetime.now(UTC).timestamp()))
+    await mark_user_revoked(str(user.id), int(datetime.now(UTC).timestamp() * 1000))
     await write_audit_log(
         db,
         organization_id=user.organization_id,
@@ -1175,7 +1178,7 @@ async def reset_password(
         )
         .values(revoked_at=now)
     )
-    await mark_user_revoked(str(user.id), int(now.timestamp()))
+    await mark_user_revoked(str(user.id), int(now.timestamp() * 1000))
     await write_audit_log(
         db,
         organization_id=user.organization_id,

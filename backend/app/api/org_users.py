@@ -292,7 +292,7 @@ async def update_org_user(
                 .where(RefreshToken.user_id == target.id, RefreshToken.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
-            await mark_user_revoked(str(target.id), int(now.timestamp()))
+            await mark_user_revoked(str(target.id), int(now.timestamp() * 1000))
 
     after = {
         "role": target.role,
@@ -346,7 +346,7 @@ async def revoke_user_sessions(
         .where(RefreshToken.user_id == target.id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=now)
     )
-    await mark_user_revoked(str(target.id), int(now.timestamp()))
+    await mark_user_revoked(str(target.id), int(now.timestamp() * 1000))
     await write_audit_log(
         db,
         organization_id=actor.organization_id,

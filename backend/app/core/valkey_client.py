@@ -90,11 +90,16 @@ async def check_rate_limit(
         return True, 0
 
 
+def _to_ms(ts: int) -> int:
+    return ts * 1000 if 0 < ts < 10_000_000_000 else ts
+
+
 async def mark_user_revoked(user_id: str, revoked_at_ts: int) -> None:
-    _local_revocations[user_id] = revoked_at_ts
+    revoked_ms = _to_ms(revoked_at_ts)
+    _local_revocations[user_id] = revoked_ms
     try:
         client = get_valkey()
-        await client.set(f"tp:revoked:{user_id}", str(revoked_at_ts), ex=960)
+        await client.set(f"tp:revoked:{user_id}", str(revoked_ms), ex=960)
         await client.publish(
             "tp:ws:events", json.dumps({"type": "user.revoked", "user_id": user_id})
         )
@@ -103,12 +108,13 @@ async def mark_user_revoked(user_id: str, revoked_at_ts: int) -> None:
 
 
 async def is_user_revoked(user_id: str, token_iat: int) -> bool:
+    iat_ms = _to_ms(token_iat)
     local_ts = _local_revocations.get(user_id)
-    if local_ts is not None and token_iat <= local_ts:
+    if local_ts is not None and iat_ms <= _to_ms(local_ts):
         return True
     try:
         val = await get_valkey().get(f"tp:revoked:{user_id}")
-        if val is not None and token_iat <= int(val):
+        if val is not None and iat_ms <= _to_ms(int(val)):
             return True
     except Exception:
         pass

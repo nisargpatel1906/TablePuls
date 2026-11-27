@@ -56,7 +56,7 @@ def revoke_all() -> None:
             )
             await db.commit()
             for uid in users:
-                await mark_user_revoked(str(uid), int(now.timestamp()))
+                await mark_user_revoked(str(uid), int(now.timestamp() * 1000))
             return len(users)
 
     count = asyncio.run(_run())
