@@ -26,6 +26,7 @@ from app.db.base import get_db, uuid7
 from app.db.models import AuditLog, RefreshToken, User, Venue
 from app.schemas.auth import InviteUserRequest, UpdateUserRequest
 from app.services.audit import write_audit_log
+from app.services.email import send_email_if_configured
 
 router = APIRouter(prefix="/api/v1/org", tags=["org-admin"])
 
@@ -167,13 +168,22 @@ async def invite_user(
 
     settings = get_settings()
     invite_url = f"{settings.public_app_url.rstrip('/')}/register?token={raw_token}"
+    email_sent = await send_email_if_configured(
+        email_norm,
+        f"You're invited to TablePulse ({body.role})",
+        (
+            f"You have been invited to join TablePulse as {body.role}.\n\n"
+            f"Complete your registration (valid for 48 hours): {invite_url}\n"
+        ),
+    )
     payload = {
         "invitation_id": str(inv_row.id),
         "email": email_norm,
         "role": body.role,
         "expires_at": expires_at.isoformat(),
-        "invite_url": invite_url if not settings.smtp_host else None,
-        "token": raw_token if settings.app_env != "production" else None,
+        "email_sent": email_sent,
+        "invite_url": invite_url if not email_sent else None,
+        "token": raw_token if (settings.app_env != "production" and not email_sent) else None,
     }
     if idempotency_key:
         await check_and_store_idempotency(f"invite:{actor.id}:{idempotency_key}", payload)
@@ -392,7 +402,17 @@ async def create_admin_reset_link(
     )
     await db.commit()
     url = f"{get_settings().public_app_url.rstrip('/')}/reset-password?token={raw_token}"
-    return success_response({"reset_url": url, "expires_at": expires_at.isoformat()})
+    email_sent = await send_email_if_configured(
+        target.email,
+        "TablePulse password reset",
+        (
+            "An organization administrator initiated a password reset for your TablePulse account.\n\n"
+            f"Reset your password (valid for 30 minutes): {url}\n"
+        ),
+    )
+    return success_response(
+        {"reset_url": url, "email_sent": email_sent, "expires_at": expires_at.isoformat()}
+    )
 
 
 @router.get("/audit-logs")

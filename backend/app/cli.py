@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import subprocess
 from datetime import UTC, datetime
@@ -12,13 +13,29 @@ from typing import Annotated
 
 import typer
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.config import get_settings
-from app.core.security import decrypt_field, encrypt_field
+from app.core.errors import AppError
+from app.core.security import (
+    decrypt_field,
+    encrypt_field,
+    hash_password,
+    validate_password_strength,
+)
 from app.core.valkey_client import mark_user_revoked
-from app.db.base import get_session_factory
-from app.db.models import AlertRule, Camera, RefreshToken, User, WaitlistEntry
+from app.db.base import get_session_factory, uuid7
+from app.db.models import (
+    AlertRule,
+    AuditLog,
+    Camera,
+    Organization,
+    RefreshToken,
+    SystemSetting,
+    User,
+    Venue,
+    WaitlistEntry,
+)
 
 app = typer.Typer(help="TablePulse CLI")
 admin_app = typer.Typer(help="TablePulse administrative operations")
@@ -122,6 +139,135 @@ def restore(
         ["pg_restore", "--clean", "--if-exists", f"--dbname={db_url}", str(input_file)], check=True
     )
     typer.echo(f"Restored backup from {input_file}")
+
+
+@admin_app.command("create-org")
+def create_org(
+    org_name: Annotated[str, typer.Option("--org-name", help="Organization name")],
+    owner_email: Annotated[str, typer.Option("--owner-email", help="Initial OWNER email address")],
+    owner_name: Annotated[str, typer.Option("--owner-name", help="Initial OWNER full name")],
+    owner_password: Annotated[
+        str, typer.Option("--owner-password", help="Initial OWNER password (>=12 chars)")
+    ],
+    venue_name: Annotated[
+        str | None, typer.Option("--venue-name", help="Optional initial venue name")
+    ] = None,
+    timezone: Annotated[str, typer.Option("--timezone", help="Initial venue timezone")] = "UTC",
+    currency_code: Annotated[
+        str, typer.Option("--currency-code", help="3-letter ISO currency code")
+    ] = "INR",
+) -> None:
+    """Provision an isolated organization + OWNER (+ optional initial venue) for multi-org setups."""
+    org_clean = org_name.strip()
+    email_norm = owner_email.strip().lower()
+    name_clean = owner_name.strip()
+    curr = currency_code.strip().upper()
+
+    if not org_clean:
+        raise typer.BadParameter("org-name cannot be empty")
+    if "@" not in email_norm or "." not in email_norm.split("@")[-1]:
+        raise typer.BadParameter("owner-email must be a valid email address")
+    if not name_clean:
+        raise typer.BadParameter("owner-name cannot be empty")
+    if len(curr) != 3 or not curr.isalpha():
+        raise typer.BadParameter("currency-code must be a 3-letter ISO code")
+
+    try:
+        validate_password_strength(owner_password)
+    except AppError as exc:
+        raise typer.BadParameter(exc.message) from exc
+
+    async def _run() -> dict[str, str | None]:
+        factory = get_session_factory()
+        async with factory() as db:
+            existing_user = (
+                await db.execute(select(User.id).where(User.email == email_norm))
+            ).scalar_one_or_none()
+            if existing_user is not None:
+                raise typer.BadParameter(f"Email '{email_norm}' is already registered")
+
+            existing_org = (
+                await db.execute(
+                    select(Organization.id).where(
+                        func.lower(Organization.name) == org_clean.lower(),
+                        Organization.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing_org is not None:
+                raise typer.BadParameter(f"Organization '{org_clean}' already exists")
+
+            org = Organization(id=uuid7(), name=org_clean)
+            db.add(org)
+            await db.flush()
+
+            db.add(
+                SystemSetting(
+                    organization_id=org.id,
+                    ai_inference_enabled=get_settings().ai_inference_enabled,
+                    face_blur_enforced=True,
+                    snapshot_retention_days=7,
+                    analytics_retention_days=365,
+                )
+            )
+            owner = User(
+                id=uuid7(),
+                organization_id=org.id,
+                email=email_norm,
+                full_name=name_clean,
+                password_hash=hash_password(owner_password),
+                role="OWNER",
+                assigned_venue_ids=[],
+                is_active=True,
+            )
+            db.add(owner)
+            await db.flush()
+
+            venue: Venue | None = None
+            if venue_name and venue_name.strip():
+                venue = Venue(
+                    id=uuid7(),
+                    organization_id=org.id,
+                    name=venue_name.strip(),
+                    timezone=timezone.strip() or "UTC",
+                    currency_code=curr,
+                )
+                db.add(venue)
+                await db.flush()
+                db.add(
+                    AlertRule(
+                        id=uuid7(),
+                        organization_id=org.id,
+                        venue_id=venue.id,
+                        section_name=None,
+                    )
+                )
+
+            db.add(
+                AuditLog(
+                    id=uuid7(),
+                    organization_id=org.id,
+                    venue_id=venue.id if venue else None,
+                    actor_user_id=owner.id,
+                    action="CLI_CREATE_ORG",
+                    target_type="organization",
+                    target_id=org.id,
+                    after_json={
+                        "organization_name": org.name,
+                        "owner_email": owner.email,
+                        "venue_id": str(venue.id) if venue else None,
+                    },
+                )
+            )
+            await db.commit()
+            return {
+                "organization_id": str(org.id),
+                "owner_id": str(owner.id),
+                "venue_id": str(venue.id) if venue else None,
+            }
+
+    result = asyncio.run(_run())
+    typer.echo(json.dumps(result))
 
 
 if __name__ == "__main__":

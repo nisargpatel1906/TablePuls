@@ -90,7 +90,7 @@ export default function UsersAndAuditPage() {
     setSuccessMsg(null);
     setGeneratedUrl(null);
     try {
-      const res = await apiFetch<{ invite_url: string; email: string }>(
+      const res = await apiFetch<{ invite_url: string | null; email_sent?: boolean; email: string }>(
         "/api/v1/org/users/invite",
         {
           method: "POST",
@@ -101,8 +101,12 @@ export default function UsersAndAuditPage() {
           }),
         },
       );
-      setSuccessMsg(`Created 48h invite link for ${res.email}.`);
-      setGeneratedUrl(res.invite_url);
+      setSuccessMsg(
+        res.email_sent && !res.invite_url
+          ? `Sent 48h invitation email to ${res.email}.`
+          : `Created 48h invite link for ${res.email}.`,
+      );
+      setGeneratedUrl(res.invite_url ?? null);
       setInvEmail("");
       setShowInvite(false);
       await loadData();

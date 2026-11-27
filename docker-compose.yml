@@ -65,6 +65,11 @@ services:
       MENU_IMAGES_ENABLED: ${MENU_IMAGES_ENABLED:-true}
       DEMO_MODE: ${DEMO_MODE:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
       OPENCV_FFMPEG_CAPTURE_OPTIONS: ${OPENCV_FFMPEG_CAPTURE_OPTIONS:-rtsp_transport;tcp}
     volumes:
       - snapshots_data:/app/data/snapshots
@@ -177,6 +182,16 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - internal
+
+  mailpit:
+    image: axllent/mailpit:v1.22
+    profiles: ["dev", "demo", "qa"]
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
     networks:
       - internal
 
