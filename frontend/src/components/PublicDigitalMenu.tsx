@@ -302,7 +302,7 @@ export function PublicDigitalMenu({
     >
       {/* Top Preview Banner */}
       {data?.preview_mode && (
-        <div className="bg-amber-600 px-4 py-1.5 text-center text-xs font-semibold text-white">
+        <div className="bg-amber-800 px-4 py-1.5 text-center text-xs font-semibold text-white">
           {lbl.previewBanner}
         </div>
       )}
