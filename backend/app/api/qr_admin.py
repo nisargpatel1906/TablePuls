@@ -578,16 +578,21 @@ async def get_qr_scan_stats(
         )
     ).all()
 
-    per_table = [
+    per_table_rows: list[dict[str, Any]] = [
         {
             "table_id": str(t.id),
             "table_code": t.table_code,
             "section_name": t.section_name,
             "scans_total": int(q.scan_count),
             "scans_window": win_by_table.get(t.id, 0),
+            "scan_count": win_by_table.get(t.id, 0),
         }
         for t, q in tbl_qrs
     ]
+    per_table = sorted(
+        per_table_rows,
+        key=lambda p: (-int(p["scans_window"]), -int(p["scans_total"]), str(p["table_code"])),
+    )
     return success_response(
         {
             "days": days,

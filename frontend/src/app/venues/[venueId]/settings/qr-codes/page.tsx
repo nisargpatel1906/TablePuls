@@ -102,7 +102,14 @@ interface QrStatsSummary {
   total_scans_all_time: number;
   total_scans_window: number;
   by_day: Array<{ date: string; scans: number }>;
-  by_table: Array<{ table_id: string; table_code: string; section_name: string; scan_count: number }>;
+  by_table: Array<{
+    table_id: string;
+    table_code: string;
+    section_name: string;
+    scan_count?: number;
+    scans_window?: number;
+    scans_total?: number;
+  }>;
 }
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -513,7 +520,7 @@ interface QrStatsSummary {
                   {scanStats.by_table[0] && (
                     <span>
                       Top table: <strong>{scanStats.by_table[0].table_code}</strong> (
-                      {scanStats.by_table[0].scan_count})
+                      {scanStats.by_table[0].scan_count ?? scanStats.by_table[0].scans_window ?? 0})
                     </span>
                   )}
                 </div>

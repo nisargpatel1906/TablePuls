@@ -85,6 +85,15 @@ export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalPro
     };
   }, [open, venueId, selectedTableId, previewTheme]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
@@ -92,9 +101,9 @@ export function MenuPreviewModal({ open, venueId, onClose }: MenuPreviewModalPro
       role="dialog"
       aria-modal="true"
       aria-label="Live Customer Menu Mobile Preview"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
     >
-      <div className="flex max-h-[94vh] w-full max-w-lg flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-4 shadow-2xl">
+      <div className="my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-4 shadow-2xl">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-3">
           <div className="flex items-center gap-2">
             <Smartphone className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />

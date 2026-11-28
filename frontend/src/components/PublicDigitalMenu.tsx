@@ -324,11 +324,11 @@ export function PublicDigitalMenu({
             )}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-lg font-bold tracking-tight">
+                <h1 className="text-base font-bold leading-snug tracking-tight sm:text-lg">
                   {data?.venue.name || "Digital Menu"}
                 </h1>
                 {data?.table.label && (
-                  <span className="rounded-full bg-[var(--accent-primary)] px-2.5 py-0.5 text-[11px] font-bold text-white">
+                  <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--accent-primary)] px-2.5 py-0.5 text-[11px] font-bold text-white">
                     {data.table.label}
                   </span>
                 )}
@@ -423,7 +423,7 @@ export function PublicDigitalMenu({
           <>
             {/* Menu Selector Tabs */}
             {data.menus.length > 1 && (
-              <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              <div className="no-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
                 {data.menus.map((m) => (
                   <button
                     key={m.id}
@@ -458,7 +458,7 @@ export function PublicDigitalMenu({
                 />
               </label>
 
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
                 {DIETARY_CHIPS.map((chip) => {
                   const active = dietFilter === chip.key;
                   return (
@@ -480,7 +480,7 @@ export function PublicDigitalMenu({
               </div>
 
               {filteredCategories.length > 1 && (
-                <nav aria-label="Menu categories" className="flex gap-1.5 overflow-x-auto pt-0.5">
+                <nav aria-label="Menu categories" className="no-scrollbar flex gap-1.5 overflow-x-auto pt-0.5">
                   {filteredCategories.map((cat) => (
                     <a
                       key={cat.id}
