@@ -1241,11 +1241,11 @@ export default function MenuStudioPage() {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                       {items.map((item) => (
                         <article
                           key={item.id}
-                          className={`tp-glass flex gap-3 rounded-xl border p-3 transition ${
+                          className={`tp-glass flex min-w-0 gap-3 rounded-xl border p-3 transition ${
                             !item.is_available ? "border-amber-700/60" : ""
                           }`}
                         >
