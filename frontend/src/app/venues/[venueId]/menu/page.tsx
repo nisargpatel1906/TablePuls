@@ -138,7 +138,7 @@ function SortableCategoryRow({
             disabled={isFirst}
             onClick={() => onMove(-1)}
             aria-label={`Move ${cat.name} up`}
-            className="rounded p-1 hover:bg-black/10 disabled:opacity-30"
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 hover:bg-black/10 disabled:opacity-30 md:min-h-[28px] md:min-w-[28px]"
           >
             <ArrowUp className="h-3 w-3" />
           </button>
@@ -147,7 +147,7 @@ function SortableCategoryRow({
             disabled={isLast}
             onClick={() => onMove(1)}
             aria-label={`Move ${cat.name} down`}
-            className="rounded p-1 hover:bg-black/10 disabled:opacity-30"
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 hover:bg-black/10 disabled:opacity-30 md:min-h-[28px] md:min-w-[28px]"
           >
             <ArrowDown className="h-3 w-3" />
           </button>
@@ -155,7 +155,7 @@ function SortableCategoryRow({
             type="button"
             onClick={onEdit}
             aria-label={`Edit category ${cat.name}`}
-            className="rounded p-1 hover:bg-black/10"
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 hover:bg-black/10 md:min-h-[28px] md:min-w-[28px]"
           >
             <Edit3 className="h-3 w-3" />
           </button>
@@ -163,7 +163,7 @@ function SortableCategoryRow({
             type="button"
             onClick={onDelete}
             aria-label={`Delete category ${cat.name}`}
-            className="rounded p-1 text-red-600 hover:bg-red-500/10"
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-red-600 hover:bg-red-500/10 md:min-h-[28px] md:min-w-[28px]"
           >
             <Trash2 className="h-3 w-3" />
           </button>
