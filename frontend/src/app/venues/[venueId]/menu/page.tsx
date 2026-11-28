@@ -1881,7 +1881,7 @@ export default function MenuStudioPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border-subtle)]">
-                        {csvPreview.rows.slice(0, 100).map((r) => (
+                        {(csvPreview.rows ?? []).slice(0, 100).map((r) => (
                           <tr key={r.row_number}>
                             <td className="px-2 py-1.5 font-mono">{r.row_number}</td>
                             <td className="px-2 py-1.5 font-mono">{r.sku || "—"}</td>

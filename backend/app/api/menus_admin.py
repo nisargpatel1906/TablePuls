@@ -1631,10 +1631,27 @@ async def preview_menu_csv_import(
 
     parsed_rows: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    ui_rows: list[dict[str, Any]] = []
     seen_skus_in_file: set[str] = set()
     total_rows = 0
     will_create = 0
     will_update = 0
+
+    def _record_row_error(
+        r_num: int, raw_row: dict[str, Any], col: str, msg: str
+    ) -> None:
+        errors.append({"row": r_num, "column": col, "message": msg})
+        if len(ui_rows) < 100:
+            ui_rows.append(
+                {
+                    "row_number": r_num,
+                    "sku": _csv_unquote_safe(raw_row.get("sku")).upper() or None,
+                    "category_name": _csv_unquote_safe(raw_row.get("category_name"))[:100] or "—",
+                    "name": _csv_unquote_safe(raw_row.get("name"))[:120] or "—",
+                    "action": "error",
+                    "errors": [f"{col}: {msg}"],
+                }
+            )
 
     for row_num, row in enumerate(reader, start=2):
         total_rows += 1
@@ -1648,12 +1665,12 @@ async def preview_menu_csv_import(
         if "category_name" in (reader.fieldnames or []) and not _csv_unquote_safe(
             row.get("category_name")
         ):
-            errors.append({"row": row_num, "column": "category_name", "message": "Missing category_name"})
+            _record_row_error(row_num, row, "category_name", "Missing category_name")
             continue
 
         item_name = _csv_unquote_safe(row.get("name"))
         if not item_name or len(item_name) > 120:
-            errors.append({"row": row_num, "column": "name", "message": "Name must be 1-120 chars"})
+            _record_row_error(row_num, row, "name", "Name must be 1-120 chars")
             continue
 
         try:
@@ -1661,12 +1678,8 @@ async def preview_menu_csv_import(
             if price < 0 or price > 100_000_000:
                 raise ValueError("price out of range")
         except Exception:
-            errors.append(
-                {
-                    "row": row_num,
-                    "column": "price_minor_units",
-                    "message": "Invalid integer minor units (0..100000000)",
-                }
+            _record_row_error(
+                row_num, row, "price_minor_units", "Invalid integer minor units (0..100000000)"
             )
             continue
 
@@ -1678,32 +1691,30 @@ async def preview_menu_csv_import(
                 if comp_price <= price or comp_price > 100_000_000:
                     raise ValueError("compare price must exceed price")
             except Exception:
-                errors.append(
-                    {
-                        "row": row_num,
-                        "column": "compare_at_price_minor_units",
-                        "message": "Compare price must be an integer greater than price_minor_units",
-                    }
+                _record_row_error(
+                    row_num,
+                    row,
+                    "compare_at_price_minor_units",
+                    "Compare price must be an integer greater than price_minor_units",
                 )
                 continue
 
         sku_val = _csv_unquote_safe(row.get("sku")).upper() or None
         if sku_val is not None:
             if not _SKU_RE.match(sku_val):
-                errors.append({"row": row_num, "column": "sku", "message": "Invalid SKU format"})
+                _record_row_error(row_num, row, "sku", "Invalid SKU format")
                 continue
             if sku_val in seen_skus_in_file:
-                errors.append({"row": row_num, "column": "sku", "message": f"Duplicate SKU '{sku_val}' in CSV"})
+                _record_row_error(row_num, row, "sku", f"Duplicate SKU '{sku_val}' in CSV")
                 continue
             seen_skus_in_file.add(sku_val)
 
         if sku_val and sku_val in existing_skus and mode == "create_only":
-            errors.append(
-                {
-                    "row": row_num,
-                    "column": "sku",
-                    "message": f"SKU '{sku_val}' already exists (use upsert_by_sku mode)",
-                }
+            _record_row_error(
+                row_num,
+                row,
+                "sku",
+                f"SKU '{sku_val}' already exists (use upsert_by_sku mode)",
             )
             continue
 
@@ -1714,12 +1725,8 @@ async def preview_menu_csv_import(
             if not t_clean:
                 continue
             if t_clean not in ALLOWED_DIETARY_TAGS:
-                errors.append(
-                    {
-                        "row": row_num,
-                        "column": "dietary_tags",
-                        "message": f"Unsupported dietary tag '{t_clean}'",
-                    }
+                _record_row_error(
+                    row_num, row, "dietary_tags", f"Unsupported dietary tag '{t_clean}'"
                 )
                 tag_err = True
                 break
@@ -1735,12 +1742,8 @@ async def preview_menu_csv_import(
             if not a_clean:
                 continue
             if a_clean not in ALLOWED_ALLERGENS:
-                errors.append(
-                    {
-                        "row": row_num,
-                        "column": "allergens",
-                        "message": f"Unsupported allergen '{a_clean}'",
-                    }
+                _record_row_error(
+                    row_num, row, "allergens", f"Unsupported allergen '{a_clean}'"
                 )
                 all_err = True
                 break
@@ -1753,7 +1756,7 @@ async def preview_menu_csv_import(
             is_avail = _parse_bool_cell(row.get("is_available"), True)
             is_feat = _parse_bool_cell(row.get("is_featured"), False)
         except ValueError as exc:
-            errors.append({"row": row_num, "column": "is_available", "message": str(exc)})
+            _record_row_error(row_num, row, "is_available", str(exc))
             continue
 
         prep_raw = (row.get("prep_time_minutes") or "").strip()
@@ -1761,14 +1764,10 @@ async def preview_menu_csv_import(
         prep_val = int(prep_raw) if prep_raw.isdigit() else None
         cal_val = int(cal_raw) if cal_raw.isdigit() else None
         if prep_val is not None and not (1 <= prep_val <= 240):
-            errors.append(
-                {"row": row_num, "column": "prep_time_minutes", "message": "Must be 1..240 minutes"}
-            )
+            _record_row_error(row_num, row, "prep_time_minutes", "Must be 1..240 minutes")
             continue
         if cal_val is not None and not (0 <= cal_val <= 10000):
-            errors.append(
-                {"row": row_num, "column": "calories_kcal", "message": "Must be 0..10000 kcal"}
-            )
+            _record_row_error(row_num, row, "calories_kcal", "Must be 0..10000 kcal")
             continue
 
         desc_val = _csv_unquote_safe(row.get("description"))[:500] or None
@@ -1788,6 +1787,17 @@ async def preview_menu_csv_import(
         else:
             will_create += 1
 
+        if len(ui_rows) < 100:
+            ui_rows.append(
+                {
+                    "row_number": row_num,
+                    "sku": sku_val,
+                    "category_name": cat_name[:100],
+                    "name": item_name,
+                    "action": op,
+                    "errors": [],
+                }
+            )
         parsed_rows.append(
             {
                 "row": row_num,
@@ -1831,6 +1841,7 @@ async def preview_menu_csv_import(
             "will_create": will_create,
             "will_update": will_update,
             "errors": errors[:50],
+            "rows": ui_rows,
             "preview_sample": [
                 {
                     "row": r["row"],

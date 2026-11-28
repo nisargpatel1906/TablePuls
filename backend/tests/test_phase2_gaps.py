@@ -268,6 +268,10 @@ async def test_menu_csv_import_roundtrip_duplicate_bulk_auto_restore_and_i18n(
     pdata = prev.json()["data"]
     assert pdata["valid_rows"] == 1
     assert pdata["invalid_rows"] == 1
+    assert len(pdata["rows"]) == 2
+    assert pdata["rows"][0]["action"] == "create"
+    assert pdata["rows"][1]["action"] == "error"
+    assert len(pdata["rows"][1]["errors"]) >= 1
     import_id = pdata["import_id"]
 
     # all_or_nothing blocks when invalid_rows > 0
