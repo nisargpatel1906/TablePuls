@@ -485,7 +485,9 @@ export function PublicDigitalMenu({
                     <a
                       key={cat.id}
                       href={`#cat-${cat.id}`}
-                      className="inline-flex min-h-[44px] shrink-0 items-center px-2 text-xs font-bold text-[var(--accent-primary)] hover:underline"
+                      className={`inline-flex min-h-[44px] shrink-0 items-center px-2 text-xs font-bold hover:underline ${
+                        theme === "dark" ? "text-sky-300" : "text-[var(--accent-primary)]"
+                      }`}
                     >
                       {localizedText(cat.translations_json, locale, "name", cat.name)}
                     </a>
