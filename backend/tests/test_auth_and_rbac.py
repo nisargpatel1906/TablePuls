@@ -447,7 +447,7 @@ async def test_same_second_logout_and_relogin_keeps_new_session_valid(
     # Immediate re-login within the same integer second must issue a valid token
     relogin = await client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "VeryStrongPassword123!"},
+        json={"email": "owner@example.com", "password": "CorrectHorseBattery99!"},
     )
     assert relogin.status_code == 200
     token2 = relogin.json()["data"]["access_token"]
